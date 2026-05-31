@@ -1,0 +1,1014 @@
+:root {
+  color-scheme: dark;
+
+  /* ---- accent system ---------------------------------------------------
+     One source of truth for the four states. The capsule, dots, chips and
+     aurora all read from these so a colour tweak stays consistent. */
+  --c-idle: #8b94a3;
+  --c-working: #4ea2ff;
+  --c-working-2: #6ad7ff; /* cyan partner for the working aurora gradient */
+  --c-done: #25d6a0;
+  --c-error: #ff6058;
+  --c-music: #ff6fa5;
+
+  --text: rgba(255, 255, 255, 0.96);
+  --text-dim: rgba(232, 236, 244, 0.62);
+  --hairline: rgba(255, 255, 255, 0.09);
+}
+
+/* Typed custom props so the capsule's halo + accent can be *animated*
+   smoothly between states instead of snapping. */
+@property --halo {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --ring {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", Roboto, "Helvetica Neue", sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  cursor: default;
+}
+
+/* Allow selecting & copying the text content (memos, notifications, events). */
+.memo-text,
+.notif-title,
+.notif-body,
+.notif-row-title,
+.notif-row-body,
+.evt-text,
+.media-title,
+.media-artist {
+  user-select: text;
+  cursor: text;
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 10px;
+}
+
+.stage {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+}
+
+/* ======================================================================
+   ISLAND — the capsule
+   A dark, consistent scrim guarantees white text stays legible on ANY
+   wallpaper (bright or dark); the backdrop blur+saturate layered on top is
+   what sells the "frosted glass" refraction. We lean on the scrim rather
+   than brightness() tricks, which used to muddy bright desktops into a
+   flat purple slab.
+   ====================================================================== */
+.island {
+  position: relative;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 38px;
+  border-radius: 999px;
+  --halo: transparent;
+  --ring: transparent;
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.13) 0%,
+      rgba(255, 255, 255, 0.04) 30%,
+      rgba(255, 255, 255, 0) 62%
+    ),
+    rgba(17, 19, 25, 0.5);
+  backdrop-filter: blur(26px) saturate(165%) brightness(0.92);
+  -webkit-backdrop-filter: blur(26px) saturate(165%) brightness(0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* Layered edge: thin dark outer ring keeps the rim visible on a white
+     wallpaper; inset top highlight catches light like a bevelled edge; inset
+     bottom shade gives the glass thickness; the last shadow is the animated
+     state halo (transparent at rest). */
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2),
+    0 14px 34px rgba(0, 0, 0, 0.34),
+    0 3px 9px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.4),
+    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.4),
+    0 0 26px -4px var(--halo);
+  text-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  overflow: hidden;
+  /* NEVER transition `transform` here — Framer drives transform for the
+     layout + hover animations; a CSS transition on it causes the janky fight
+     that made the pill feel laggy. Animate colour/shadow only. */
+  transition: box-shadow 0.35s ease, --halo 0.45s ease, --ring 0.45s ease;
+  will-change: transform;
+}
+
+/* Per-state accent. The capsule itself gains a faint coloured halo + ring,
+   so the WHOLE island reacts to state, not just the dot — reads beautifully
+   in motion. */
+.island.s-working {
+  --halo: rgba(78, 162, 255, 0.5);
+  --ring: rgba(120, 196, 255, 0.5);
+}
+.island.s-done {
+  --halo: rgba(37, 214, 160, 0.42);
+  --ring: rgba(82, 230, 184, 0.5);
+}
+.island.s-error {
+  --halo: rgba(255, 96, 88, 0.46);
+  --ring: rgba(255, 130, 124, 0.55);
+}
+
+.island:hover {
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.22),
+    0 20px 46px rgba(0, 0, 0, 0.44),
+    0 5px 13px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.5),
+    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.42),
+    0 0 30px -3px var(--halo);
+}
+
+/* ---- aurora: the live "working" layer -------------------------------
+   Holds the accent ring + the travelling specular sweep. Clipped to the
+   pill by the island's overflow:hidden. Hidden (opacity 0) at rest; fades in
+   when the island carries a state. */
+.aurora {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  box-shadow: inset 0 0 0 1px var(--ring),
+    inset 0 0 14px -3px var(--ring);
+}
+.island.s-working .aurora,
+.island.s-done .aurora,
+.island.s-error .aurora {
+  opacity: 1;
+}
+
+/* Travelling glass sheen — a soft diagonal highlight that sweeps across the
+   capsule then rests, signalling "alive / working". Pure transform = the
+   compositor handles it, so it stays smooth even with the backdrop blur. */
+.aurora::before {
+  content: "";
+  position: absolute;
+  top: -60%;
+  height: 220%;
+  width: 26%;
+  left: 0;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.16) 45%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent
+  );
+  transform: translateX(-200%) skewX(-14deg);
+  opacity: 0;
+}
+.island.s-working .aurora::before {
+  animation: sheen 3.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes sheen {
+  0% {
+    transform: translateX(-200%) skewX(-14deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  42% {
+    opacity: 1;
+  }
+  52%,
+  100% {
+    transform: translateX(560%) skewX(-14deg);
+    opacity: 0;
+  }
+}
+
+/* Done flash: the ring gives a single gentle bloom when a task finishes. */
+.island.s-done .aurora {
+  animation: doneBloom 0.7s ease-out;
+}
+@keyframes doneBloom {
+  0% {
+    box-shadow: inset 0 0 0 1px var(--ring), inset 0 0 0 0 var(--ring);
+  }
+  40% {
+    box-shadow: inset 0 0 0 1.5px var(--ring), inset 0 0 22px 0 var(--ring);
+  }
+}
+
+/* Static diagonal specular streak baked into the glass (present always). */
+.glass-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.04) 18%,
+    rgba(255, 255, 255, 0) 44%
+  );
+  opacity: 0.85;
+}
+.island > *:not(.glass-sheen):not(.aurora),
+.panel > *:not(.glass-sheen) {
+  position: relative;
+  z-index: 1;
+}
+
+.agents {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.agent + .agent::before {
+  content: "";
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  margin-right: 6px;
+}
+
+/* ---- dots: glossy little status beads -------------------------------- */
+.dot {
+  --dot: rgba(255, 255, 255, 0.45);
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: radial-gradient(
+      circle at 34% 28%,
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0) 42%
+    ),
+    var(--dot);
+  box-shadow: 0 0 0 0 transparent, inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+  transition: background 0.25s, box-shadow 0.25s;
+}
+
+.dot.idle {
+  --dot: var(--c-idle);
+}
+.dot.working {
+  --dot: var(--c-working);
+  box-shadow: 0 0 8px 0 rgba(78, 162, 255, 0.55),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.dot.done {
+  --dot: var(--c-done);
+  box-shadow: 0 0 9px 1px rgba(37, 214, 160, 0.6),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.2);
+  animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.dot.error {
+  --dot: var(--c-error);
+  box-shadow: 0 0 9px 1px rgba(255, 96, 88, 0.55),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.2);
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(78, 162, 255, 0.55),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(78, 162, 255, 0),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+  }
+}
+@keyframes popIn {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+/* ---- state chip (right side of each agent) ----
+   The colour signal lives on the front .dot only. The chip stays a neutral,
+   glow-free label so the dot reads as "the light". */
+.state-chip {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+  color: var(--text-dim);
+}
+.state-chip.working {
+  color: rgba(236, 242, 250, 0.9);
+}
+.state-chip.idle {
+  color: rgba(170, 178, 190, 0.66);
+}
+.state-chip .check {
+  stroke: var(--c-done);
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Tool · time detail. Tabular figures keep the timer the same width as it
+   ticks, so the row never reflows when seconds change. */
+.chip-sep {
+  opacity: 0.4;
+  margin: 0 1px;
+}
+.chip-time {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.72;
+}
+
+.label {
+  font-weight: 600;
+  opacity: 0.97;
+  letter-spacing: 0.1px;
+}
+
+.sub {
+  opacity: 0.65;
+  font-size: 12px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-tag {
+  font-size: 10px;
+  font-family: ui-monospace, Consolas, monospace;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* ---- equalizer: animated "now playing" bars -------------------------- */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--c-music);
+}
+.eq i {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleY(0.3);
+  transform-origin: bottom;
+}
+.eq.playing i {
+  animation: eq 1.1s ease-in-out infinite;
+}
+.eq i:nth-child(1) {
+  animation-delay: -0.9s;
+}
+.eq i:nth-child(2) {
+  animation-delay: -0.4s;
+}
+.eq i:nth-child(3) {
+  animation-delay: -0.65s;
+}
+.eq i:nth-child(4) {
+  animation-delay: -0.15s;
+}
+@keyframes eq {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* ======================================================================
+   PANEL — the drop-down
+   ====================================================================== */
+.panel {
+  pointer-events: auto;
+  width: 384px;
+  max-height: 78vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 24px;
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0.03) 18%,
+      rgba(255, 255, 255, 0) 42%
+    ),
+    rgba(16, 18, 24, 0.62);
+  backdrop-filter: blur(34px) saturate(160%) brightness(0.9);
+  -webkit-backdrop-filter: blur(34px) saturate(160%) brightness(0.9);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.22),
+    0 28px 60px rgba(0, 0, 0, 0.5),
+    0 8px 20px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.32),
+    inset 0 -18px 32px -22px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.38);
+  padding: 14px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel::-webkit-scrollbar {
+  width: 6px;
+}
+.panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+}
+.panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.panel > * {
+  flex-shrink: 0;
+}
+
+/* A section = a soft frosted card. Grouping rows inside cards gives the panel
+   real visual hierarchy / depth instead of a flat list. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  padding: 0 2px;
+}
+
+.section-meta {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 3px 4px;
+  border-radius: 9px;
+  margin: 0 -4px;
+  transition: background 0.15s;
+}
+.panel-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.panel-name {
+  font-weight: 600;
+  min-width: 88px;
+}
+
+.panel-meta {
+  opacity: 0.6;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.row-x {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.panel-row:hover .row-x {
+  opacity: 1;
+}
+.row-x:hover {
+  color: rgba(248, 113, 113, 0.95);
+}
+
+.divider {
+  height: 1px;
+  background: var(--hairline);
+  margin: 1px 0;
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.evt {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  opacity: 0.88;
+  padding: 1px 0;
+}
+
+.evt-time {
+  opacity: 0.45;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  flex-shrink: 0;
+  width: 54px;
+}
+
+.evt-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.evt-text {
+  opacity: 0.82;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  opacity: 0.45;
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.check {
+  width: 14px;
+  height: 14px;
+  stroke: var(--c-done);
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- minimal (resting) island ---------------------------------------- */
+.island.minimal {
+  padding: 0 14px;
+  height: 26px;
+  opacity: 0.66;
+}
+.island.minimal:hover {
+  opacity: 1;
+}
+.minimal-inner {
+  gap: 8px;
+}
+.minimal-inner .dot {
+  width: 7px;
+  height: 7px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: color 0.15s;
+}
+.link-btn:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.92);
+}
+.link-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ---- memos ----------------------------------------------------------- */
+.memo-input input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  padding: 7px 11px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+.memo-input input::placeholder {
+  color: rgba(255, 255, 255, 0.34);
+}
+.memo-input input:focus {
+  border-color: rgba(78, 162, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(78, 162, 255, 0.14);
+}
+
+.memos {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.memo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 4px;
+  margin: 0 -4px;
+  border-radius: 8px;
+  font-size: 13px;
+  overflow: hidden;
+  transition: background 0.15s;
+}
+.memo:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+.memo.completed .memo-text {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.memo-check {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.38);
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #06281d;
+  padding: 0;
+  transition: background 0.18s, border-color 0.18s, transform 0.12s;
+}
+.memo-check:hover {
+  border-color: rgba(37, 214, 160, 0.85);
+  transform: scale(1.08);
+}
+.memo-check.on {
+  background: var(--c-done);
+  border-color: var(--c-done);
+  color: #04231a;
+}
+
+.memo-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.memo-x {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.memo:hover .memo-x {
+  opacity: 1;
+}
+.memo-x:hover {
+  color: rgba(248, 113, 113, 0.9);
+}
+
+/* ---- island row (agents + music) ------------------------------------- */
+.island-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.vsep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.16);
+  flex-shrink: 0;
+}
+
+/* ---- compact music in island ----------------------------------------- */
+.media-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  opacity: 0.94;
+}
+.media-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* ---- notification flash bubble (full island) ------------------------- */
+.island.flashing {
+  background: rgba(24, 22, 30, 0.92);
+}
+.notif-bubble {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.notif-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #4aa3ff, #8a6bff);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.notif-badge.sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.notif-content {
+  min-width: 0;
+  flex: 1;
+}
+.notif-line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.notif-app {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+.notif-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notif-body {
+  font-size: 12px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- full media card in panel ---------------------------------------- */
+.media-full {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.media-art {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff6fa5 0%, #c44bff 55%, #6a5bff 100%);
+  box-shadow: 0 5px 14px rgba(196, 75, 255, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.media-art .eq {
+  color: #fff;
+  height: 16px;
+  width: 18px;
+}
+.media-meta {
+  flex: 1;
+  min-width: 0;
+}
+.media-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-artist {
+  font-size: 11px;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+.media-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.media-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.media-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.media-btn:active {
+  transform: scale(0.9);
+}
+.media-btn.play {
+  width: 34px;
+  height: 34px;
+  background: #fff;
+  color: #111;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+.media-btn.play:hover {
+  background: #fff;
+  color: #111;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.14), 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- notification list in panel -------------------------------------- */
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.notif-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.notif-row-content {
+  min-width: 0;
+  flex: 1;
+}
+.notif-row-line1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notif-row-title {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notif-row-body {
+  font-size: 11px;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+/* Respect reduced-motion: kill the looping flourishes, keep states legible. */
+@media (prefers-reduced-motion: reduce) {
+  .aurora::before,
+  .dot.working,
+  .eq.playing i {
+    animation: none !important;
+  }
+}

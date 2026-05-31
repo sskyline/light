@@ -1,0 +1,37 @@
+{
+  "_comment": "Copy the 'hooks' block below into your ~/.claude/settings.json. Replace <LIGHT_DIR> with the absolute path to your light/hooks directory (use double backslashes on Windows).",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd user_prompt" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd tool_use" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd stop" }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd notification" }
+        ]
+      }
+    ]
+  }
+}

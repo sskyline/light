@@ -1,0 +1,34 @@
+{
+  "name": "light",
+  "version": "1.0.0",
+  "private": true,
+  "description": "桌面状态胶囊 · 实时显示 Claude Code 与 Codex 的工作状态",
+  "author": "Light",
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --port 5173 --strictPort",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "stage": "node scripts/stage.mjs",
+    "dist": "npm run build && npm run stage",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
+  },
+  "dependencies": {
+    "framer-motion": "^11.11.17",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "30.5.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output / packaged app
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+
+# Logs & temp
+*.log
+*.tmp
+*.b64
+
+# Secrets / env — never commit these
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / AI tooling config — machine-specific, may contain local paths.
+# .claude/settings.local.json holds your local permission grants & absolute
+# paths; the whole folder is per-user, so we keep it out of the repo entirely.
+.claude/
+.vscode/
+.idea/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Personal launch copy — not part of the OSS product
+发布文案.md
+
+# Local notification-debug helpers — not part of the product
+bridge/diag*.ps1
