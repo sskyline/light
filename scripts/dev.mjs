@@ -53,7 +53,7 @@ async function main() {
   const vite = run("npx", ["vite", "--port", String(VITE_PORT), "--strictPort"]);
 
   log("dev", `Waiting for Vite on :${VITE_PORT}...`);
-  await waitForPort(VITE_PORT);
+  await waitForPort(VITE_PORT, "localhost");
   log("dev", "Vite is ready.");
 
   log("dev", "Compiling Electron main...");
@@ -65,8 +65,12 @@ async function main() {
   log("dev", "Launching Electron...");
   const env = {
     ...process.env,
-    VITE_DEV_SERVER_URL: `http://127.0.0.1:${VITE_PORT}`,
-    ELECTRON_CACHE: process.env.ELECTRON_CACHE || `${process.env.LOCALAPPDATA}\\electron\\Cache`,
+    VITE_DEV_SERVER_URL: `http://localhost:${VITE_PORT}`,
+    ...(process.env.ELECTRON_CACHE
+      ? { ELECTRON_CACHE: process.env.ELECTRON_CACHE }
+      : process.env.LOCALAPPDATA
+        ? { ELECTRON_CACHE: `${process.env.LOCALAPPDATA}\\electron\\Cache` }
+        : {}),
   };
   const electron = run("npx", ["electron", "."], { env });
 

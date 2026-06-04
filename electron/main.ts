@@ -38,10 +38,18 @@ function getDevServerUrl(): string | undefined {
 //   packaged → resources/app/icon.ico   (staged by scripts/stage.mjs)
 //   dev      → <root>/installer/light.ico
 function resolveIcon(): string | undefined {
-  const candidates = [
-    path.join(__dirname, "..", "icon.ico"),
-    path.join(__dirname, "..", "installer", "light.ico"),
-  ];
+  const isMac = process.platform === "darwin";
+  const candidates = isMac
+    ? [
+        path.join(__dirname, "..", "installer", "tray-icon-macTemplate@4x.png"),
+        path.join(__dirname, "..", "installer", "tray-icon-macTemplate.png"),
+        path.join(__dirname, "..", "icon.ico"),
+        path.join(__dirname, "..", "installer", "light.ico"),
+      ]
+    : [
+        path.join(__dirname, "..", "icon.ico"),
+        path.join(__dirname, "..", "installer", "light.ico"),
+      ];
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) return c;
@@ -52,15 +60,30 @@ function resolveIcon(): string | undefined {
   return undefined;
 }
 
+let currentDisplayId: number | null = null;
+
+function moveToDisplay(display: Electron.Display): void {
+  if (!mainWindow) return;
+  currentDisplayId = display.id;
+  const { x: dx, y: dy } = display.bounds;
+  const { width: screenW } = display.workAreaSize;
+  mainWindow.setPosition(
+    dx + Math.round((screenW - WINDOW_WIDTH) / 2),
+    dy,
+  );
+}
+
 function createWindow(): void {
   const display = screen.getPrimaryDisplay();
+  currentDisplayId = display.id;
+  const { x: dx, y: dy } = display.bounds;
   const { width: screenW } = display.workAreaSize;
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
-    x: Math.round((screenW - WINDOW_WIDTH) / 2),
-    y: 0,
+    x: dx + Math.round((screenW - WINDOW_WIDTH) / 2),
+    y: dy,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -150,10 +173,9 @@ function stopCursorPoll(): void {
 }
 
 function buildTrayIcon(): Electron.NativeImage {
+  // macOS-friendly 22×22 RGBA PNG (white circle on transparent)
   const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAAY0lEQVR42mNgGAWjYBQMfMD0n4Ghj+E/A+M/A+M/Iw" +
-      "MTAxMDAyMDIwMjAyMDIwMzAxMjEwMTIxMDEwMzExMTM/+gM4ABAAYGRgYGBkYGRgZGBgZGBgYAAFLgC2sFqFQ0AAAAA" +
-      "SUVORK5CYII=",
+    "iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAmElEQVR4nO2UywnAIAyGe3Uuz55dx028O0pXcYg00ggihvqIpYf+8CP4+Igx5jh+9QgAFNqgHdqjA42O5tUMVBMkQluR1vUI1KJPBlgr7bO9kfZCSzgfOeXUD0Kz0rl2zuF+EC6nT0rnDAd2k9Asx4H9Ithz4LAIDq9HvC3H26piTx0TXP7nFXD5XlFFnq4n190KuHw//qwuL2q89iPzIToAAAAASUVORK5CYII=",
     "base64",
   );
   return nativeImage.createFromBuffer(png);
@@ -162,9 +184,22 @@ function buildTrayIcon(): Electron.NativeImage {
 function createTray(): void {
   const iconPath = resolveIcon();
   const trayImg = iconPath ? nativeImage.createFromPath(iconPath) : buildTrayIcon();
+  if (process.platform === "darwin") trayImg.setTemplateImage(true);
   tray = new Tray(trayImg);
   tray.setToolTip("Light · 桌面状态胶囊");
   const refresh = () => {
+    const displays = screen.getAllDisplays();
+    const displayItems: Electron.MenuItemConstructorOptions[] = displays.map((d, i) => {
+      const isCurrent = d.id === currentDisplayId;
+      const label = d.id === screen.getPrimaryDisplay().id
+        ? `Built-in Display`
+        : `Display ${i + 1} (${d.size.width}×${d.size.height})`;
+      return {
+        label: isCurrent ? `● ${label}` : `  ${label}`,
+        click: () => { moveToDisplay(d); refresh(); },
+      };
+    });
+
     const menu = Menu.buildFromTemplate([
       {
         label: mainWindow?.isVisible() ? "Hide" : "Show",
@@ -175,6 +210,8 @@ function createTray(): void {
         },
       },
       { type: "separator" },
+      ...displayItems,
+      { type: "separator" },
       { label: `HTTP :${DEFAULT_PORT}`, enabled: false },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },
@@ -182,12 +219,7 @@ function createTray(): void {
     tray?.setContextMenu(menu);
   };
   refresh();
-  tray.on("click", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isVisible()) mainWindow.hide();
-    else mainWindow.showInactive();
-    refresh();
-  });
+  tray.on("click", () => { refresh(); tray?.popUpContextMenu(); });
 }
 
 function wireIpc(): void {
