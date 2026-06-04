@@ -119,7 +119,7 @@ export function Island({ sessions, memos, system }: Props) {
 
   // Show every agent that has a live session — including idle ones, so Claude
   // Code stays visible with its idle/working/done state. Sessions are removed
-  // on session_end (window closed) or GC'd after 30 min of silence.
+  // on session_end (window closed) or GC'd after their idle timeout.
   const grouped = groupByAgent(sessions);
   const agents = AGENT_ORDER.filter((a) => grouped.has(a));
 

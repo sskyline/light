@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Wraps the `codex` CLI invocation so Light can show its working/done state.
+// Wraps the `codex` CLI invocation so Light can track the process lifetime.
 // Usage:  node codex-wrap.mjs <args-passed-to-codex...>
 // Requires `codex` to be available on PATH.
 
@@ -47,14 +47,24 @@ async function notify(type, extra = {}) {
 }
 
 const args = process.argv.slice(2);
+const sessionId = `cw-${Date.now().toString(36)}-${process.pid.toString(36)}`;
 
 (async () => {
-  await notify("session_start");
-  await notify("user_prompt", { message: args.join(" ").slice(0, 200) || "(codex session)" });
+  await notify("session_start", { sessionId });
+  if (args.length > 0) {
+    await notify("user_prompt", {
+      sessionId,
+      message: args.join(" ").slice(0, 200),
+    });
+  }
 
   const child = spawn(CODEX_BIN, args, {
     stdio: "inherit",
     shell: process.platform === "win32",
+    env: {
+      ...process.env,
+      LIGHT_CODEX_SESSION_ID: sessionId,
+    },
   });
 
   const exitCode = await new Promise((resolve) => {
@@ -62,13 +72,8 @@ const args = process.argv.slice(2);
     child.on("error", () => resolve(127));
   });
 
-  if (exitCode === 0) {
-    await notify("stop");
-  } else {
-    await notify("error", { message: `codex exited with ${exitCode}` });
-  }
-  // Show the done/error state briefly, then remove the session from the island.
-  await new Promise((r) => setTimeout(r, 4000));
-  await notify("session_end");
+  // Process exit means the interactive shell is gone; remove it immediately.
+  // Turn-level done/error states are reported by the official Codex hooks.
+  await notify("session_end", { sessionId });
   process.exit(exitCode);
 })();

@@ -75,8 +75,11 @@ function keyOf(agent: AgentId, sessionId: string): string {
 
 function shortSessionId(raw: string | undefined): string {
   if (!raw) return "default";
+  const cleaned = raw.replace(/[^A-Za-z0-9-]/g, "");
+  if (cleaned.startsWith("cw-")) return cleaned.slice(0, 20) || "default";
+  if (cleaned.startsWith("codex-wrap-")) return cleaned.slice(0, 24) || "default";
   // Many session IDs are UUIDs; take the first 8 chars as a stable short tag.
-  return raw.replace(/[^A-Za-z0-9-]/g, "").slice(0, 12) || "default";
+  return cleaned.slice(0, 12) || "default";
 }
 
 export class StateStore extends EventEmitter {
