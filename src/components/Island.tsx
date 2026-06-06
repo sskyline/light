@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { AgentId, AgentStatus, HotZone, Memo, SessionState, SystemState } from "../types";
 import { AgentPill } from "./AgentPill";
@@ -12,6 +13,14 @@ interface Props {
 }
 
 const AGENT_ORDER: AgentId[] = ["claude-code", "codex", "trae"];
+const DRAG_THRESHOLD_PX = 5;
+
+interface DragState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+}
 
 function groupByAgent(sessions: SessionState[]): Map<AgentId, SessionState[]> {
   const map = new Map<AgentId, SessionState[]>();
@@ -36,10 +45,13 @@ function overallStatus(sessions: SessionState[]): AgentStatus {
 export function Island({ sessions, memos, system }: Props) {
   const [hover, setHover] = useState(false);
   const [open, setOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const islandRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const suppressNextClickRef = useRef(false);
 
   const [, force] = useState(0);
   useEffect(() => {
@@ -130,7 +142,74 @@ export function Island({ sessions, memos, system }: Props) {
   const isMinimal = !hasContent;
   const status = overallStatus(sessions);
 
-  const handleClick = () => setOpen((v) => !v);
+  const handleClick = () => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+    setOpen((v) => !v);
+  };
+  const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !window.light?.startWindowDrag) return;
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.screenX,
+      startY: e.screenY,
+      dragging: false,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+
+    const totalDx = e.screenX - drag.startX;
+    const totalDy = e.screenY - drag.startY;
+    if (!drag.dragging) {
+      if (Math.hypot(totalDx, totalDy) < DRAG_THRESHOLD_PX) return;
+      drag.dragging = true;
+      suppressNextClickRef.current = true;
+      setDragging(true);
+      setOpen(false);
+      window.light?.startWindowDrag?.();
+    }
+    e.preventDefault();
+  };
+  const finishDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const wasDragging = drag.dragging;
+    if (wasDragging) e.preventDefault();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    dragRef.current = null;
+    setDragging(false);
+    if (wasDragging) window.light?.endWindowDrag?.();
+    if (wasDragging) {
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 0);
+    }
+  };
+  useEffect(() => {
+    const finishAnyDrag = () => {
+      if (!dragRef.current?.dragging) return;
+      dragRef.current = null;
+      setDragging(false);
+      window.light?.endWindowDrag?.();
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 0);
+    };
+    window.addEventListener("blur", finishAnyDrag);
+    window.addEventListener("mouseup", finishAnyDrag);
+    return () => {
+      window.removeEventListener("blur", finishAnyDrag);
+      window.removeEventListener("mouseup", finishAnyDrag);
+      finishAnyDrag();
+    };
+  }, []);
   // Hover expands the pill and keeps the panel alive. When the main process
   // drives hover (real app), ignore DOM enter/leave so the two can't fight
   // (which is what left the pill stuck "expanded"). In the mock, DOM events
@@ -144,8 +223,12 @@ export function Island({ sessions, memos, system }: Props) {
     <div className="stage" ref={stageRef}>
       <motion.div
         ref={islandRef}
-        className={`island s-${status} ${isMinimal ? "minimal" : ""} ${open ? "open" : ""}`}
+        className={`island s-${status} ${isMinimal ? "minimal" : ""} ${open ? "open" : ""} ${dragging ? "dragging" : ""}`}
         onClick={handleClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
         layout

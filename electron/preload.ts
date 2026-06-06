@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld("light", {
   clearEvents: () => ipcRenderer.send("light:clear-events"),
   removeSession: (key: string) => ipcRenderer.send("light:remove-session", key),
   mediaControl: (action: string) => ipcRenderer.send("light:media-control", action),
+  startWindowDrag: () => ipcRenderer.send("light:start-window-drag"),
+  endWindowDrag: () => ipcRenderer.send("light:end-window-drag"),
   setHotZones: (zones: HotZone[]) => ipcRenderer.send("light:set-hot-zones", zones),
   quit: () => ipcRenderer.send("light:quit"),
 });

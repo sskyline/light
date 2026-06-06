@@ -14,14 +14,33 @@ interface HotZone {
   h: number;
 }
 
+interface WindowPosition {
+  x: number;
+  y: number;
+}
+
+interface WindowDrag {
+  startCursor: Electron.Point;
+  startWindow: WindowPosition;
+  lastX: number;
+  lastY: number;
+  timer: NodeJS.Timeout;
+}
+
 const WINDOW_WIDTH = 640;
 const WINDOW_HEIGHT = 520;
+const ISLAND_SAFE_WIDTH = 420;
+const ISLAND_SAFE_HEIGHT = 72;
 const CURSOR_POLL_MS = 60;
+const WINDOW_DRAG_POLL_MS = 16;
+const POSITION_SAVE_DEBOUNCE_MS = 250;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let cursorTimer: NodeJS.Timeout | null = null;
-let currentlyIgnoring = true;
+let positionSaveTimer: NodeJS.Timeout | null = null;
+let windowDrag: WindowDrag | null = null;
+let currentlyIgnoring: boolean | null = null;
 let hotZones: HotZone[] = [];
 let lastHoverSent: boolean | null = null;
 
@@ -32,6 +51,135 @@ let winBridge: WinBridge | null = null;
 
 function getDevServerUrl(): string | undefined {
   return process.env.VITE_DEV_SERVER_URL;
+}
+
+function isWindowPosition(value: unknown): value is WindowPosition {
+  if (!value || typeof value !== "object") return false;
+  const pos = value as Partial<WindowPosition>;
+  return Number.isFinite(pos.x) && Number.isFinite(pos.y);
+}
+
+function windowPositionPath(): string {
+  return path.join(app.getPath("userData"), "window-position.json");
+}
+
+function readWindowPosition(): WindowPosition | null {
+  try {
+    const raw = fs.readFileSync(windowPositionPath(), "utf8");
+    const parsed = JSON.parse(raw);
+    return isWindowPosition(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function islandSafeRect(pos: WindowPosition): Electron.Rectangle {
+  return {
+    x: pos.x + Math.round((WINDOW_WIDTH - ISLAND_SAFE_WIDTH) / 2),
+    y: pos.y,
+    width: ISLAND_SAFE_WIDTH,
+    height: ISLAND_SAFE_HEIGHT,
+  };
+}
+
+function containsRect(outer: Electron.Rectangle, inner: Electron.Rectangle): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+function clamp(n: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.min(Math.max(n, min), max);
+}
+
+function clampPositionToDisplay(pos: WindowPosition, display: Electron.Display): WindowPosition {
+  const area = display.workArea;
+  const safeOffsetX = Math.round((WINDOW_WIDTH - ISLAND_SAFE_WIDTH) / 2);
+  return {
+    x: clamp(pos.x, area.x - safeOffsetX, area.x + area.width - safeOffsetX - ISLAND_SAFE_WIDTH),
+    y: clamp(pos.y, area.y, area.y + area.height - ISLAND_SAFE_HEIGHT),
+  };
+}
+
+function isIslandVisible(pos: WindowPosition): boolean {
+  const safe = islandSafeRect(pos);
+  return screen.getAllDisplays().some((display) => containsRect(display.workArea, safe));
+}
+
+function centeredPosition(display: Electron.Display): WindowPosition {
+  const { x: dx, y: dy } = display.bounds;
+  const { width: screenW } = display.workAreaSize;
+  return {
+    x: dx + Math.round((screenW - WINDOW_WIDTH) / 2),
+    y: dy,
+  };
+}
+
+function initialWindowPosition(display: Electron.Display): WindowPosition {
+  const saved = readWindowPosition();
+  if (saved) {
+    if (isIslandVisible(saved)) return saved;
+    return clampPositionToDisplay(saved, screen.getDisplayNearestPoint(saved));
+  }
+  return centeredPosition(display);
+}
+
+function saveWindowPositionNow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const [x, y] = mainWindow.getPosition();
+  try {
+    const file = windowPositionPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ x, y }, null, 2), "utf8");
+  } catch (err) {
+    console.error("[window] save position failed:", err);
+  }
+}
+
+function scheduleWindowPositionSave(): void {
+  if (positionSaveTimer) clearTimeout(positionSaveTimer);
+  positionSaveTimer = setTimeout(() => {
+    positionSaveTimer = null;
+    saveWindowPositionNow();
+  }, POSITION_SAVE_DEBOUNCE_MS);
+}
+
+function updateWindowDrag(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || !windowDrag) return;
+  const cursor = screen.getCursorScreenPoint();
+  const nextX = Math.round(windowDrag.startWindow.x + cursor.x - windowDrag.startCursor.x);
+  const nextY = Math.round(windowDrag.startWindow.y + cursor.y - windowDrag.startCursor.y);
+  if (nextX === windowDrag.lastX && nextY === windowDrag.lastY) return;
+  windowDrag.lastX = nextX;
+  windowDrag.lastY = nextY;
+  mainWindow.setPosition(nextX, nextY);
+}
+
+function startWindowDrag(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  stopWindowDrag(false);
+  const cursor = screen.getCursorScreenPoint();
+  const [x, y] = mainWindow.getPosition();
+  windowDrag = {
+    startCursor: cursor,
+    startWindow: { x, y },
+    lastX: x,
+    lastY: y,
+    timer: setInterval(updateWindowDrag, WINDOW_DRAG_POLL_MS),
+  };
+  setIgnore(false);
+  updateWindowDrag();
+}
+
+function stopWindowDrag(savePosition = true): void {
+  if (!windowDrag) return;
+  clearInterval(windowDrag.timer);
+  windowDrag = null;
+  if (savePosition) scheduleWindowPositionSave();
 }
 
 // The branded icon, resolved for both layouts:
@@ -65,25 +213,21 @@ let currentDisplayId: number | null = null;
 function moveToDisplay(display: Electron.Display): void {
   if (!mainWindow) return;
   currentDisplayId = display.id;
-  const { x: dx, y: dy } = display.bounds;
-  const { width: screenW } = display.workAreaSize;
-  mainWindow.setPosition(
-    dx + Math.round((screenW - WINDOW_WIDTH) / 2),
-    dy,
-  );
+  const pos = centeredPosition(display);
+  mainWindow.setPosition(pos.x, pos.y);
+  scheduleWindowPositionSave();
 }
 
 function createWindow(): void {
   const display = screen.getPrimaryDisplay();
-  currentDisplayId = display.id;
-  const { x: dx, y: dy } = display.bounds;
-  const { width: screenW } = display.workAreaSize;
+  const pos = initialWindowPosition(display);
+  currentDisplayId = screen.getDisplayNearestPoint(pos).id;
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
-    x: dx + Math.round((screenW - WINDOW_WIDTH) / 2),
-    y: dy,
+    x: pos.x,
+    y: pos.y,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -103,6 +247,8 @@ function createWindow(): void {
     },
   });
 
+  hotZones = [];
+  currentlyIgnoring = null;
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   setIgnore(true);
@@ -125,9 +271,11 @@ function createWindow(): void {
   });
 
   mainWindow.on("closed", () => {
+    stopWindowDrag(false);
     mainWindow = null;
     stopCursorPoll();
   });
+  mainWindow.on("move", scheduleWindowPositionSave);
 }
 
 function setIgnore(ignore: boolean): void {
@@ -145,6 +293,14 @@ function startCursorPoll(): void {
   stopCursorPoll();
   cursorTimer = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (windowDrag) {
+      setIgnore(false);
+      if (lastHoverSent !== true) {
+        lastHoverSent = true;
+        mainWindow.webContents.send("light:hover", true);
+      }
+      return;
+    }
     const cursor = screen.getCursorScreenPoint();
     const bounds = mainWindow.getBounds();
     const localX = cursor.x - bounds.x;
@@ -229,6 +385,8 @@ function wireIpc(): void {
   ipcMain.on("light:media-control", (_evt, action: MediaAction) => {
     winBridge?.control(action);
   });
+  ipcMain.on("light:start-window-drag", () => startWindowDrag());
+  ipcMain.on("light:end-window-drag", () => stopWindowDrag());
   ipcMain.on("light:set-hot-zones", (_evt, zones: HotZone[]) => {
     if (!Array.isArray(zones)) return;
     hotZones = zones.filter(
@@ -292,6 +450,12 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  stopWindowDrag(false);
+  if (positionSaveTimer) {
+    clearTimeout(positionSaveTimer);
+    positionSaveTimer = null;
+  }
+  saveWindowPositionNow();
   winBridge?.stop();
 });
 

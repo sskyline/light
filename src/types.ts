@@ -88,6 +88,8 @@ declare global {
       clearEvents: () => void;
       removeSession: (key: string) => void;
       mediaControl: (action: MediaAction) => void;
+      startWindowDrag?: () => void;
+      endWindowDrag?: () => void;
       setHotZones: (zones: HotZone[]) => void;
       quit: () => void;
     };

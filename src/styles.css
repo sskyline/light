@@ -16,13 +16,8 @@
   --hairline: rgba(255, 255, 255, 0.09);
 }
 
-/* Typed custom props so the capsule's halo + accent can be *animated*
-   smoothly between states instead of snapping. */
-@property --halo {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: transparent;
-}
+/* Typed custom prop so the capsule's accent can be animated smoothly between
+   states instead of snapping. */
 @property --ring {
   syntax: "<color>";
   inherits: false;
@@ -96,7 +91,6 @@ body,
   padding: 0 16px;
   height: 38px;
   border-radius: 999px;
-  --halo: transparent;
   --ring: transparent;
   background: linear-gradient(
       180deg,
@@ -110,38 +104,33 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.12);
   /* Layered edge: thin dark outer ring keeps the rim visible on a white
      wallpaper; inset top highlight catches light like a bevelled edge; inset
-     bottom shade gives the glass thickness; the last shadow is the animated
-     state halo (transparent at rest). */
+     bottom shade gives the glass thickness. */
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2),
     0 14px 34px rgba(0, 0, 0, 0.34),
     0 3px 9px rgba(0, 0, 0, 0.22),
     inset 0 1px 0.5px rgba(255, 255, 255, 0.4),
-    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.4),
-    0 0 26px -4px var(--halo);
+    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.4);
   text-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   overflow: hidden;
   /* NEVER transition `transform` here — Framer drives transform for the
      layout + hover animations; a CSS transition on it causes the janky fight
      that made the pill feel laggy. Animate colour/shadow only. */
-  transition: box-shadow 0.35s ease, --halo 0.45s ease, --ring 0.45s ease;
+  transition: box-shadow 0.35s ease, --ring 0.45s ease;
   will-change: transform;
+  touch-action: none;
 }
 
-/* Per-state accent. The capsule itself gains a faint coloured halo + ring,
-   so the WHOLE island reacts to state, not just the dot — reads beautifully
-   in motion. */
+/* Per-state accent. The capsule gets a clipped internal ring so state remains
+   visible without an external glow leaking through the transparent window. */
 .island.s-working {
-  --halo: rgba(78, 162, 255, 0.5);
-  --ring: rgba(120, 196, 255, 0.5);
+  --ring: rgba(120, 206, 255, 0.62);
 }
 .island.s-done {
-  --halo: rgba(37, 214, 160, 0.42);
-  --ring: rgba(82, 230, 184, 0.5);
+  --ring: rgba(82, 230, 184, 0.58);
 }
 .island.s-error {
-  --halo: rgba(255, 96, 88, 0.46);
-  --ring: rgba(255, 130, 124, 0.55);
+  --ring: rgba(255, 130, 124, 0.64);
 }
 
 .island:hover {
@@ -149,8 +138,11 @@ body,
     0 20px 46px rgba(0, 0, 0, 0.44),
     0 5px 13px rgba(0, 0, 0, 0.28),
     inset 0 1px 0.5px rgba(255, 255, 255, 0.5),
-    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.42),
-    0 0 30px -3px var(--halo);
+    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.42);
+}
+
+.island.dragging {
+  cursor: move;
 }
 
 /* ---- aurora: the live "working" layer -------------------------------
@@ -167,7 +159,7 @@ body,
   opacity: 0;
   transition: opacity 0.5s ease;
   box-shadow: inset 0 0 0 1px var(--ring),
-    inset 0 0 14px -3px var(--ring);
+    inset 0 0 18px -4px var(--ring);
 }
 .island.s-working .aurora,
 .island.s-done .aurora,
@@ -198,6 +190,53 @@ body,
 .island.s-working .aurora::before {
   animation: sheen 3.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
+
+.island.s-working .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(78, 162, 255, 0.025),
+    rgba(106, 215, 255, 0.045) 50%,
+    rgba(78, 162, 255, 0.025)
+  );
+  box-shadow: inset 0 0 0 1.5px var(--ring),
+    inset 0 0 8px 0 rgba(78, 162, 255, 0.42),
+    inset 0 0 18px -10px rgba(106, 215, 255, 0.78);
+}
+
+.island.s-working .aurora::before {
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(106, 215, 255, 0.15) 40%,
+    rgba(255, 255, 255, 0.26) 50%,
+    rgba(78, 162, 255, 0.11) 60%,
+    transparent
+  );
+}
+
+.island.s-done .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(37, 214, 160, 0.04),
+    rgba(82, 230, 184, 0.08) 50%,
+    rgba(37, 214, 160, 0.04)
+  );
+  box-shadow: inset 0 0 0 1.3px var(--ring),
+    inset 0 0 18px -5px rgba(37, 214, 160, 0.44),
+    inset 0 0 8px -6px rgba(82, 230, 184, 0.64);
+}
+
+.island.s-error .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 96, 88, 0.05),
+    rgba(255, 130, 124, 0.1) 50%,
+    rgba(255, 96, 88, 0.05)
+  );
+  box-shadow: inset 0 0 0 1.35px var(--ring),
+    inset 0 0 19px -5px rgba(255, 96, 88, 0.5),
+    inset 0 0 8px -6px rgba(255, 158, 151, 0.72);
+}
 @keyframes sheen {
   0% {
     transform: translateX(-200%) skewX(-14deg);
@@ -222,10 +261,13 @@ body,
 }
 @keyframes doneBloom {
   0% {
-    box-shadow: inset 0 0 0 1px var(--ring), inset 0 0 0 0 var(--ring);
+    box-shadow: inset 0 0 0 1.1px var(--ring),
+      inset 0 0 8px -7px rgba(37, 214, 160, 0.35);
   }
   40% {
-    box-shadow: inset 0 0 0 1.5px var(--ring), inset 0 0 22px 0 var(--ring);
+    box-shadow: inset 0 0 0 1.5px var(--ring),
+      inset 0 0 22px -4px rgba(37, 214, 160, 0.62),
+      inset 0 0 9px -6px rgba(82, 230, 184, 0.8);
   }
 }
 
