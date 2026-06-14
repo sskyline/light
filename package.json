@@ -1,6 +1,6 @@
 {
   "name": "light",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "桌面状态胶囊 · 实时显示 Claude Code 与 Codex 的工作状态",
   "author": "Light",
