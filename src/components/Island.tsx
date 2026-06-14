@@ -51,6 +51,7 @@ export function Island({ sessions, memos, system }: Props) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const lastHotZonesKeyRef = useRef("");
   const suppressNextClickRef = useRef(false);
 
   const [, force] = useState(0);
@@ -108,6 +109,9 @@ export function Island({ sessions, memos, system }: Props) {
         h: panel.height + padding * 2,
       });
     }
+    const key = zones.map((z) => `${Math.round(z.x)},${Math.round(z.y)},${Math.round(z.w)},${Math.round(z.h)}`).join("|");
+    if (key === lastHotZonesKeyRef.current) return;
+    lastHotZonesKeyRef.current = key;
     bridge.setHotZones(zones);
   };
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, powerMonitor } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { StateStore, type LightEvent, type AppState } from "./state";
@@ -39,6 +39,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let cursorTimer: NodeJS.Timeout | null = null;
 let positionSaveTimer: NodeJS.Timeout | null = null;
+let displayCorrectionTimer: NodeJS.Timeout | null = null;
 let windowDrag: WindowDrag | null = null;
 let currentlyIgnoring: boolean | null = null;
 let hotZones: HotZone[] = [];
@@ -96,36 +97,82 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
 }
 
+function islandCenterPoint(pos: WindowPosition): Electron.Point {
+  const safe = islandSafeRect(pos);
+  return {
+    x: safe.x + Math.round(safe.width / 2),
+    y: safe.y + Math.round(safe.height / 2),
+  };
+}
+
+function displayForWindowPosition(pos: WindowPosition): Electron.Display {
+  return screen.getDisplayNearestPoint(islandCenterPoint(pos));
+}
+
+function displayById(id: number | null): Electron.Display | null {
+  if (id == null) return null;
+  return screen.getAllDisplays().find((display) => display.id === id) ?? null;
+}
+
 function clampPositionToDisplay(pos: WindowPosition, display: Electron.Display): WindowPosition {
   const area = display.workArea;
-  const safeOffsetX = Math.round((WINDOW_WIDTH - ISLAND_SAFE_WIDTH) / 2);
   return {
-    x: clamp(pos.x, area.x - safeOffsetX, area.x + area.width - safeOffsetX - ISLAND_SAFE_WIDTH),
+    x: clamp(pos.x, area.x, area.x + area.width - WINDOW_WIDTH),
     y: clamp(pos.y, area.y, area.y + area.height - ISLAND_SAFE_HEIGHT),
   };
 }
 
-function isIslandVisible(pos: WindowPosition): boolean {
-  const safe = islandSafeRect(pos);
-  return screen.getAllDisplays().some((display) => containsRect(display.workArea, safe));
+function isWindowPositionValidOnDisplay(pos: WindowPosition, display: Electron.Display): boolean {
+  const area = display.workArea;
+  return (
+    pos.x >= area.x &&
+    pos.x + WINDOW_WIDTH <= area.x + area.width &&
+    containsRect(area, islandSafeRect(pos))
+  );
+}
+
+function isWindowPositionValid(pos: WindowPosition): boolean {
+  return screen.getAllDisplays().some((display) => isWindowPositionValidOnDisplay(pos, display));
 }
 
 function centeredPosition(display: Electron.Display): WindowPosition {
-  const { x: dx, y: dy } = display.bounds;
-  const { width: screenW } = display.workAreaSize;
+  const area = display.workArea;
   return {
-    x: dx + Math.round((screenW - WINDOW_WIDTH) / 2),
-    y: dy,
+    x: area.x + Math.round((area.width - WINDOW_WIDTH) / 2),
+    y: area.y,
   };
 }
 
 function initialWindowPosition(display: Electron.Display): WindowPosition {
   const saved = readWindowPosition();
   if (saved) {
-    if (isIslandVisible(saved)) return saved;
-    return clampPositionToDisplay(saved, screen.getDisplayNearestPoint(saved));
+    if (isWindowPositionValid(saved)) return saved;
+    return clampPositionToDisplay(saved, displayForWindowPosition(saved));
   }
   return centeredPosition(display);
+}
+
+function correctWindowPositionForDisplays(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || windowDrag) return;
+  const [x, y] = mainWindow.getPosition();
+  const pos = { x, y };
+  const display = displayById(currentDisplayId) ?? displayForWindowPosition(pos);
+  const next = isWindowPositionValidOnDisplay(pos, display)
+    ? pos
+    : clampPositionToDisplay(pos, display);
+
+  currentDisplayId = display.id;
+  if (next.x === x && next.y === y) return;
+  mainWindow.setPosition(next.x, next.y);
+  scheduleWindowPositionSave();
+}
+
+function scheduleDisplayCorrection(delayMs = 300): void {
+  if (displayCorrectionTimer) clearTimeout(displayCorrectionTimer);
+  displayCorrectionTimer = setTimeout(() => {
+    displayCorrectionTimer = null;
+    correctWindowPositionForDisplays();
+  }, delayMs);
 }
 
 function saveWindowPositionNow(): void {
@@ -187,9 +234,14 @@ function stopWindowDrag(savePosition = true): void {
 //   dev      → <root>/installer/light.ico
 function resolveIcon(): string | undefined {
   const isMac = process.platform === "darwin";
+  const resourcesDir = process.resourcesPath;
   const candidates = isMac
     ? [
+        path.join(resourcesDir, "installer", "tray-icon-macTemplate@4x.png"),
+        path.join(resourcesDir, "installer", "tray-icon-macTemplate@2x.png"),
+        path.join(resourcesDir, "installer", "tray-icon-macTemplate.png"),
         path.join(__dirname, "..", "installer", "tray-icon-macTemplate@4x.png"),
+        path.join(__dirname, "..", "installer", "tray-icon-macTemplate@2x.png"),
         path.join(__dirname, "..", "installer", "tray-icon-macTemplate.png"),
         path.join(__dirname, "..", "icon.ico"),
         path.join(__dirname, "..", "installer", "light.ico"),
@@ -221,7 +273,7 @@ function moveToDisplay(display: Electron.Display): void {
 function createWindow(): void {
   const display = screen.getPrimaryDisplay();
   const pos = initialWindowPosition(display);
-  currentDisplayId = screen.getDisplayNearestPoint(pos).id;
+  currentDisplayId = displayForWindowPosition(pos).id;
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -262,6 +314,7 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.showInactive();
+    scheduleDisplayCorrection();
     startCursorPoll();
   });
 
@@ -275,7 +328,9 @@ function createWindow(): void {
     mainWindow = null;
     stopCursorPoll();
   });
-  mainWindow.on("move", scheduleWindowPositionSave);
+  mainWindow.on("move", () => {
+    if (!windowDrag) scheduleWindowPositionSave();
+  });
 }
 
 function setIgnore(ignore: boolean): void {
@@ -444,6 +499,12 @@ app.whenReady().then(() => {
   winBridge = new WinBridge(systemStore, bridgeDir);
   winBridge.start();
 
+  screen.on("display-added", () => scheduleDisplayCorrection(600));
+  screen.on("display-removed", () => scheduleDisplayCorrection(600));
+  screen.on("display-metrics-changed", () => scheduleDisplayCorrection(600));
+  powerMonitor.on("resume", () => scheduleDisplayCorrection(900));
+  powerMonitor.on("unlock-screen", () => scheduleDisplayCorrection(900));
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -451,6 +512,10 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   stopWindowDrag(false);
+  if (displayCorrectionTimer) {
+    clearTimeout(displayCorrectionTimer);
+    displayCorrectionTimer = null;
+  }
   if (positionSaveTimer) {
     clearTimeout(positionSaveTimer);
     positionSaveTimer = null;

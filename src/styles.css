@@ -23,6 +23,11 @@
   inherits: false;
   initial-value: transparent;
 }
+@property --outer-glow {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
 
 * {
   box-sizing: border-box;
@@ -92,6 +97,7 @@ body,
   height: 38px;
   border-radius: 999px;
   --ring: transparent;
+  --outer-glow: transparent;
   background: linear-gradient(
       180deg,
       rgba(255, 255, 255, 0.13) 0%,
@@ -106,17 +112,19 @@ body,
      wallpaper; inset top highlight catches light like a bevelled edge; inset
      bottom shade gives the glass thickness. */
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2),
-    0 14px 34px rgba(0, 0, 0, 0.34),
-    0 3px 9px rgba(0, 0, 0, 0.22),
+    0 6px 12px rgba(0, 0, 0, 0.22),
+    0 2px 6px rgba(0, 0, 0, 0.18),
     inset 0 1px 0.5px rgba(255, 255, 255, 0.4),
-    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.4);
+    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.4),
+    0 0 12px -7px var(--outer-glow);
   text-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   overflow: hidden;
   /* NEVER transition `transform` here — Framer drives transform for the
      layout + hover animations; a CSS transition on it causes the janky fight
      that made the pill feel laggy. Animate colour/shadow only. */
-  transition: box-shadow 0.35s ease, --ring 0.45s ease;
+  transition: box-shadow 0.35s ease, --ring 0.45s ease,
+    --outer-glow 0.45s ease;
   will-change: transform;
   touch-action: none;
 }
@@ -125,20 +133,24 @@ body,
    visible without an external glow leaking through the transparent window. */
 .island.s-working {
   --ring: rgba(120, 206, 255, 0.62);
+  --outer-glow: rgba(78, 162, 255, 0.36);
 }
 .island.s-done {
   --ring: rgba(82, 230, 184, 0.58);
+  --outer-glow: rgba(37, 214, 160, 0.3);
 }
 .island.s-error {
   --ring: rgba(255, 130, 124, 0.64);
+  --outer-glow: rgba(255, 96, 88, 0.34);
 }
 
 .island:hover {
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.22),
-    0 20px 46px rgba(0, 0, 0, 0.44),
-    0 5px 13px rgba(0, 0, 0, 0.28),
+    0 7px 16px rgba(0, 0, 0, 0.28),
+    0 3px 8px rgba(0, 0, 0, 0.22),
     inset 0 1px 0.5px rgba(255, 255, 255, 0.5),
-    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.42);
+    inset 0 -10px 18px -12px rgba(0, 0, 0, 0.42),
+    0 0 14px -8px var(--outer-glow);
 }
 
 .island.dragging {
@@ -199,8 +211,8 @@ body,
     rgba(78, 162, 255, 0.025)
   );
   box-shadow: inset 0 0 0 1.5px var(--ring),
-    inset 0 0 8px 0 rgba(78, 162, 255, 0.42),
-    inset 0 0 18px -10px rgba(106, 215, 255, 0.78);
+    inset 0 0 12px -2px rgba(78, 162, 255, 0.45),
+    inset 0 0 26px -13px rgba(106, 215, 255, 0.74);
 }
 
 .island.s-working .aurora::before {
@@ -222,8 +234,8 @@ body,
     rgba(37, 214, 160, 0.04)
   );
   box-shadow: inset 0 0 0 1.3px var(--ring),
-    inset 0 0 18px -5px rgba(37, 214, 160, 0.44),
-    inset 0 0 8px -6px rgba(82, 230, 184, 0.64);
+    inset 0 0 24px -7px rgba(37, 214, 160, 0.44),
+    inset 0 0 12px -8px rgba(82, 230, 184, 0.62);
 }
 
 .island.s-error .aurora {
@@ -234,8 +246,8 @@ body,
     rgba(255, 96, 88, 0.05)
   );
   box-shadow: inset 0 0 0 1.35px var(--ring),
-    inset 0 0 19px -5px rgba(255, 96, 88, 0.5),
-    inset 0 0 8px -6px rgba(255, 158, 151, 0.72);
+    inset 0 0 25px -7px rgba(255, 96, 88, 0.5),
+    inset 0 0 12px -8px rgba(255, 158, 151, 0.68);
 }
 @keyframes sheen {
   0% {

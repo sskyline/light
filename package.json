@@ -14,8 +14,51 @@
     "build": "npm run build:renderer && npm run build:electron",
     "stage": "node scripts/stage.mjs",
     "dist": "npm run build && npm run stage",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
     "start": "electron .",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
+  },
+  "build": {
+    "appId": "com.light.app",
+    "productName": "Light",
+    "directories": {
+      "output": "release/mac"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "bridge/**/*",
+      "hooks/**/*",
+      "installer/light.icns",
+      "installer/tray-icon-macTemplate*.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "installer/tray-icon-macTemplate.png",
+        "to": "installer/tray-icon-macTemplate.png"
+      },
+      {
+        "from": "installer/tray-icon-macTemplate@2x.png",
+        "to": "installer/tray-icon-macTemplate@2x.png"
+      },
+      {
+        "from": "installer/tray-icon-macTemplate@4x.png",
+        "to": "installer/tray-icon-macTemplate@4x.png"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "installer/light.icns"
+    },
+    "dmg": {
+      "backgroundColor": "#ffffff",
+      "icon": null,
+      "artifactName": "Light-${version}-${arch}.dmg"
+    }
   },
   "dependencies": {
     "framer-motion": "^11.11.17",
@@ -28,6 +71,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "electron": "30.5.1",
+    "electron-builder": "^26.15.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   }
