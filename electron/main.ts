@@ -19,6 +19,11 @@ interface WindowPosition {
   y: number;
 }
 
+interface SavedWindowPosition extends WindowPosition {
+  displayId?: number;
+  displayKey?: string;
+}
+
 interface WindowDrag {
   startCursor: Electron.Point;
   startWindow: WindowPosition;
@@ -41,6 +46,7 @@ let cursorTimer: NodeJS.Timeout | null = null;
 let positionSaveTimer: NodeJS.Timeout | null = null;
 let displayCorrectionTimer: NodeJS.Timeout | null = null;
 let windowDrag: WindowDrag | null = null;
+let suppressNextMoveSave = false;
 let currentlyIgnoring: boolean | null = null;
 let hotZones: HotZone[] = [];
 let lastHoverSent: boolean | null = null;
@@ -49,12 +55,14 @@ const store = new StateStore();
 const systemStore = new SystemStore();
 let memoStore: MemoStore | null = null;
 let winBridge: WinBridge | null = null;
+let currentDisplayId: number | null = null;
+let currentDisplayKey: string | null = null;
 
 function getDevServerUrl(): string | undefined {
   return process.env.VITE_DEV_SERVER_URL;
 }
 
-function isWindowPosition(value: unknown): value is WindowPosition {
+function isWindowPosition(value: unknown): value is SavedWindowPosition {
   if (!value || typeof value !== "object") return false;
   const pos = value as Partial<WindowPosition>;
   return Number.isFinite(pos.x) && Number.isFinite(pos.y);
@@ -64,7 +72,7 @@ function windowPositionPath(): string {
   return path.join(app.getPath("userData"), "window-position.json");
 }
 
-function readWindowPosition(): WindowPosition | null {
+function readWindowPosition(): SavedWindowPosition | null {
   try {
     const raw = fs.readFileSync(windowPositionPath(), "utf8");
     const parsed = JSON.parse(raw);
@@ -109,9 +117,36 @@ function displayForWindowPosition(pos: WindowPosition): Electron.Display {
   return screen.getDisplayNearestPoint(islandCenterPoint(pos));
 }
 
+function displayKey(display: Electron.Display): string {
+  const d = display as Electron.Display & { label?: string; internal?: boolean };
+  const label = typeof d.label === "string" ? d.label : "";
+  const internal = typeof d.internal === "boolean" ? d.internal : false;
+  return [
+    internal ? "internal" : "external",
+    label,
+    `${display.size.width}x${display.size.height}`,
+    `scale:${display.scaleFactor}`,
+  ].join("|");
+}
+
 function displayById(id: number | null): Electron.Display | null {
   if (id == null) return null;
   return screen.getAllDisplays().find((display) => display.id === id) ?? null;
+}
+
+function displayByKey(key: string | null): Electron.Display | null {
+  if (!key) return null;
+  return screen.getAllDisplays().find((display) => displayKey(display) === key) ?? null;
+}
+
+function rememberDisplay(display: Electron.Display): void {
+  currentDisplayId = display.id;
+  currentDisplayKey = displayKey(display);
+}
+
+function displayFromPreference(saved?: SavedWindowPosition | null): Electron.Display | null {
+  return displayById(saved?.displayId ?? currentDisplayId) ??
+    displayByKey(saved?.displayKey ?? currentDisplayKey);
 }
 
 function clampPositionToDisplay(pos: WindowPosition, display: Electron.Display): WindowPosition {
@@ -131,10 +166,6 @@ function isWindowPositionValidOnDisplay(pos: WindowPosition, display: Electron.D
   );
 }
 
-function isWindowPositionValid(pos: WindowPosition): boolean {
-  return screen.getAllDisplays().some((display) => isWindowPositionValidOnDisplay(pos, display));
-}
-
 function centeredPosition(display: Electron.Display): WindowPosition {
   const area = display.workArea;
   return {
@@ -146,9 +177,19 @@ function centeredPosition(display: Electron.Display): WindowPosition {
 function initialWindowPosition(display: Electron.Display): WindowPosition {
   const saved = readWindowPosition();
   if (saved) {
-    if (isWindowPositionValid(saved)) return saved;
-    return clampPositionToDisplay(saved, displayForWindowPosition(saved));
+    const preferredDisplay = displayFromPreference(saved);
+    if (preferredDisplay) {
+      rememberDisplay(preferredDisplay);
+      if (isWindowPositionValidOnDisplay(saved, preferredDisplay)) return saved;
+      return clampPositionToDisplay(saved, preferredDisplay);
+    }
+
+    const fallbackDisplay = displayForWindowPosition(saved);
+    rememberDisplay(fallbackDisplay);
+    if (isWindowPositionValidOnDisplay(saved, fallbackDisplay)) return saved;
+    return clampPositionToDisplay(saved, fallbackDisplay);
   }
+  rememberDisplay(display);
   return centeredPosition(display);
 }
 
@@ -156,15 +197,19 @@ function correctWindowPositionForDisplays(): void {
   if (!mainWindow || mainWindow.isDestroyed() || windowDrag) return;
   const [x, y] = mainWindow.getPosition();
   const pos = { x, y };
-  const display = displayById(currentDisplayId) ?? displayForWindowPosition(pos);
+  const preferredDisplay = displayFromPreference();
+  const display = preferredDisplay ?? displayForWindowPosition(pos);
   const next = isWindowPositionValidOnDisplay(pos, display)
     ? pos
-    : clampPositionToDisplay(pos, display);
+    : preferredDisplay
+      ? centeredPosition(display)
+      : clampPositionToDisplay(pos, display);
 
-  currentDisplayId = display.id;
+  if (preferredDisplay || currentDisplayId == null) rememberDisplay(display);
   if (next.x === x && next.y === y) return;
+  suppressNextMoveSave = !preferredDisplay;
   mainWindow.setPosition(next.x, next.y);
-  scheduleWindowPositionSave();
+  if (preferredDisplay) scheduleWindowPositionSave();
 }
 
 function scheduleDisplayCorrection(delayMs = 300): void {
@@ -178,10 +223,17 @@ function scheduleDisplayCorrection(delayMs = 300): void {
 function saveWindowPositionNow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const [x, y] = mainWindow.getPosition();
+  const preferredDisplay = displayFromPreference();
+  if ((currentDisplayId != null || currentDisplayKey) && !preferredDisplay) return;
+  const display = preferredDisplay ?? displayForWindowPosition({ x, y });
   try {
     const file = windowPositionPath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ x, y }, null, 2), "utf8");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ x, y, displayId: display.id, displayKey: displayKey(display) }, null, 2),
+      "utf8",
+    );
   } catch (err) {
     console.error("[window] save position failed:", err);
   }
@@ -226,7 +278,11 @@ function stopWindowDrag(savePosition = true): void {
   if (!windowDrag) return;
   clearInterval(windowDrag.timer);
   windowDrag = null;
-  if (savePosition) scheduleWindowPositionSave();
+  if (savePosition && mainWindow && !mainWindow.isDestroyed()) {
+    const [x, y] = mainWindow.getPosition();
+    rememberDisplay(displayForWindowPosition({ x, y }));
+    scheduleWindowPositionSave();
+  }
 }
 
 // The branded icon, resolved for both layouts:
@@ -260,11 +316,9 @@ function resolveIcon(): string | undefined {
   return undefined;
 }
 
-let currentDisplayId: number | null = null;
-
 function moveToDisplay(display: Electron.Display): void {
   if (!mainWindow) return;
-  currentDisplayId = display.id;
+  rememberDisplay(display);
   const pos = centeredPosition(display);
   mainWindow.setPosition(pos.x, pos.y);
   scheduleWindowPositionSave();
@@ -273,7 +327,7 @@ function moveToDisplay(display: Electron.Display): void {
 function createWindow(): void {
   const display = screen.getPrimaryDisplay();
   const pos = initialWindowPosition(display);
-  currentDisplayId = displayForWindowPosition(pos).id;
+  rememberDisplay(displayForWindowPosition(pos));
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -329,6 +383,10 @@ function createWindow(): void {
     stopCursorPoll();
   });
   mainWindow.on("move", () => {
+    if (suppressNextMoveSave) {
+      suppressNextMoveSave = false;
+      return;
+    }
     if (!windowDrag) scheduleWindowPositionSave();
   });
 }
