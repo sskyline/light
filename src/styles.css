@@ -69,6 +69,7 @@ body,
   justify-content: center;
   align-items: flex-start;
   padding-top: 10px;
+  padding-inline: 24px;
 }
 
 .stage {
@@ -77,6 +78,8 @@ body,
   flex-direction: column;
   align-items: center;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
 }
 
 /* ======================================================================
@@ -93,6 +96,7 @@ body,
   display: flex;
   align-items: center;
   gap: 12px;
+  max-width: 100%;
   padding: 0 16px;
   height: 38px;
   border-radius: 999px;
@@ -308,12 +312,14 @@ body,
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
 }
 
 .agent {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   white-space: nowrap;
   font-size: 13px;
   letter-spacing: 0.2px;
@@ -408,6 +414,7 @@ body,
   font-size: 12px;
   font-weight: 500;
   padding: 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -446,6 +453,7 @@ body,
   font-weight: 600;
   opacity: 0.97;
   letter-spacing: 0.1px;
+  flex-shrink: 0;
 }
 
 .sub {

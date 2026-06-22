@@ -32,9 +32,9 @@ interface WindowDrag {
   timer: NodeJS.Timeout;
 }
 
-const WINDOW_WIDTH = 640;
+const WINDOW_WIDTH = 880;
 const WINDOW_HEIGHT = 520;
-const ISLAND_SAFE_WIDTH = 420;
+const ISLAND_SAFE_WIDTH = 800;
 const ISLAND_SAFE_HEIGHT = 72;
 const CURSOR_POLL_MS = 60;
 const WINDOW_DRAG_POLL_MS = 16;
