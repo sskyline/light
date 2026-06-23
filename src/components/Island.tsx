@@ -37,6 +37,7 @@ function groupByAgent(sessions: SessionState[]): Map<AgentId, SessionState[]> {
 function overallStatus(sessions: SessionState[]): AgentStatus {
   const has = (s: AgentStatus) => sessions.some((x) => x.status === s);
   if (has("error")) return "error";
+  if (has("waiting")) return "waiting";
   if (has("working")) return "working";
   if (has("done")) return "done";
   return "idle";

@@ -1,12 +1,14 @@
 import { EventEmitter } from "node:events";
 
 export type AgentId = "claude-code" | "codex" | "trae";
-export type AgentStatus = "idle" | "working" | "done" | "error";
+export type AgentStatus = "idle" | "working" | "waiting" | "done" | "error";
 export type EventType =
   | "session_start"
   | "session_end"
   | "user_prompt"
   | "tool_use"
+  | "approval_request"
+  | "tool_result"
   | "stop"
   | "notification"
   | "error";
@@ -52,6 +54,8 @@ const VALID_TYPES = new Set<EventType>([
   "session_end",
   "user_prompt",
   "tool_use",
+  "approval_request",
+  "tool_result",
   "stop",
   "notification",
   "error",
@@ -163,6 +167,16 @@ export class StateStore extends EventEmitter {
         next.currentTool = evt.tool ?? evt.message;
         if (!next.startedAt) next.startedAt = evt.timestamp;
         break;
+      case "approval_request":
+        next.status = "waiting";
+        next.currentTool = evt.tool ?? evt.message;
+        if (!next.startedAt) next.startedAt = evt.timestamp;
+        break;
+      case "tool_result":
+        next.status = "working";
+        next.currentTool = undefined;
+        if (!next.startedAt) next.startedAt = evt.timestamp;
+        break;
       case "stop":
         next.status = "done";
         next.currentTool = undefined;
@@ -223,6 +237,8 @@ export class StateStore extends EventEmitter {
 
     // done/error linger briefly then settle to idle. "working" gets a much
     // longer watchdog so a crashed/disconnected agent doesn't climb forever.
+    // "waiting" intentionally persists until the user approves/denies and a
+    // follow-up tool_result/tool_use/stop/session_end event arrives.
     let delay = 0;
     if (cur.status === "done") delay = DONE_LINGER_MS;
     else if (cur.status === "error") delay = ERROR_LINGER_MS;

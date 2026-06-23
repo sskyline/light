@@ -86,6 +86,8 @@ curl -X POST http://127.0.0.1:51789/event \
     "SessionEnd":      [{ "hooks": [{ "type": "command", "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs session_end" }] }],
     "UserPromptSubmit":[{ "hooks": [{ "type": "command", "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs user_prompt" }] }],
     "PreToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs tool_use" }] }],
+    "PermissionRequest":[{ "matcher": "*", "hooks": [{ "type": "command", "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs approval_request" }] }],
+    "PostToolUse":     [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs tool_result" }] }],
     "Stop":            [{ "hooks": [{ "type": "command", "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs stop" }] }]
   }
 }
@@ -152,8 +154,8 @@ light/
 ```json
 {
   "agent": "claude-code" | "codex",
-  "type": "session_start" | "user_prompt" | "tool_use" | "stop" | "notification" | "error",
-  "sessionId": "可选",
+  "type": "session_start" | "session_end" | "user_prompt" | "tool_use" | "approval_request" | "tool_result" | "stop" | "notification" | "error",
+  "sessionId": "可选，用于区分同一 agent 的多轮并发会话",
   "tool": "可选，PreToolUse 时填工具名",
   "message": "可选，文本摘要",
   "timestamp": "可选，ISO8601"
@@ -181,6 +183,8 @@ light/
 | `session_start` | → `idle`，清空 currentTool |
 | `user_prompt` | → `working`，记录 startedAt 与 lastPrompt |
 | `tool_use` | → `working`，更新 currentTool |
+| `approval_request` | → `waiting`，显示等待审批；直到后续事件覆盖 |
+| `tool_result` | → `working`，清掉等待审批/当前工具，本轮仍在进行 |
 | `stop` | → `done`，8 秒后自动转 `idle` |
 | `error` | → `error`，5 秒后自动转 `idle` |
 | `notification` | 不改状态，只入事件流 |

@@ -116,7 +116,7 @@
 ```json
 {
   "agent": "claude-code" | "codex",
-  "type": "session_start" | "user_prompt" | "tool_use" | "stop" | "notification" | "error",
+  "type": "session_start" | "session_end" | "user_prompt" | "tool_use" | "approval_request" | "tool_result" | "stop" | "notification" | "error",
   "sessionId": "可选，区分多会话",
   "tool": "可选，tool_use 时填工具名",
   "message": "可选，文本摘要",
@@ -131,6 +131,8 @@
 ```
 user_prompt    → working
 tool_use       → working（更新 currentTool 字段）
+approval_request → waiting（提示返回审批，直到后续事件覆盖）
+tool_result    → working（工具已完成，清掉 waiting/currentTool，本轮仍在进行）
 stop           → done（8s 后自动转 idle）
 error          → error（5s 后自动转 idle）
 session_start  → idle（清空 currentTool）

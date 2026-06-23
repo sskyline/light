@@ -14,6 +14,8 @@ const EVENT_TAG: Record<LightEvent["type"], string> = {
   session_end: "end",
   user_prompt: "prompt",
   tool_use: "tool",
+  approval_request: "approve",
+  tool_result: "result",
   stop: "stop",
   notification: "note",
   error: "err",
@@ -50,6 +52,8 @@ function statusLine(a: SessionState): string {
       return "空闲";
     case "working":
       return a.currentTool ? `工作中 · ${a.currentTool}` : "工作中";
+    case "waiting":
+      return a.currentTool ? `等待审批 · ${a.currentTool}` : "等待审批";
     case "done":
       return "刚完成";
     case "error":
@@ -100,7 +104,9 @@ export function ExpandPanel({ sessions, memos, system }: Props) {
                 <span className="session-tag">对话 {a.seq}</span>
                 <span className="sub">{statusLine(a)}</span>
                 <span className="panel-meta">
-                  {a.status === "working" && a.startedAt ? formatDuration(a.startedAt) : ""}
+                  {(a.status === "working" || a.status === "waiting") && a.startedAt
+                    ? formatDuration(a.startedAt)
+                    : ""}
                 </span>
                 <button
                   className="row-x"

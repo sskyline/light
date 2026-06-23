@@ -28,6 +28,14 @@ node 也认，例如 `C:/Users/你的用户名/light`）：
       { "matcher": "*", "hooks": [{ "type": "command",
         "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs tool_use" }] }
     ],
+    "PermissionRequest": [
+      { "matcher": "*", "hooks": [{ "type": "command",
+        "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs approval_request" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command",
+        "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs tool_result" }] }
+    ],
     "Stop": [
       { "hooks": [{ "type": "command",
         "command": "node <LIGHT_DIR>/hooks/claude-hook.mjs stop" }] }
@@ -41,7 +49,7 @@ node 也认，例如 `C:/Users/你的用户名/light`）：
 **关键提醒：**
 
 - 改完 `settings.json` 必须**彻底重启 Claude Code 进程**（不是切会话）才会重新读取。
-- 进新窗口先敲 `/hooks` 确认这四项已注册；如有"信任此 hook"提示，确认放行。
+- 进新窗口先敲 `/hooks` 确认这些 hook 已注册；如有"信任此 hook"提示，确认放行。
 - `claude-hook.mjs` 读取 Claude 通过 stdin 推来的 JSON（`session_id`、`tool_name`、`prompt`），提取后 POST 给 Light，并在 `%TEMP%\light-hook.log` 留一行调用日志（排错用）。
 - Light 没启动时脚本静默退出，不会阻塞 Claude 的 hook 流水线。
 - Mac / Linux 用 `claude-hook.sh`（`chmod +x`），命令写 `bash /path/claude-hook.sh user_prompt`。
@@ -88,8 +96,8 @@ C:/Users/你的用户名/light
 |---|---|---|
 | `UserPromptSubmit` | `user_prompt` | 创建会话、切到 working，并从这一刻开始计时 |
 | `PreToolUse` | `tool_use` | 显示当前工具 |
-| `PostToolUse` | `notification` | 记录工具完成 |
-| `PermissionRequest` | `notification` | 记录审批请求 |
+| `PermissionRequest` | `approval_request` | 切到 waiting，提示返回审批 |
+| `PostToolUse` | `tool_result` | 工具完成，清掉 waiting 并回到 working |
 | `Stop` | `stop` | 本轮完成，显示 done |
 
 Codex 官方 hooks 是 thread/turn 级事件，不是 CLI 进程级事件。只进入一个空 CLI 时

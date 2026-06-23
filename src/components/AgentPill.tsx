@@ -22,14 +22,20 @@ interface Props {
 function aggregateStatus(sessions: SessionState[]): AgentStatus {
   const has = (s: AgentStatus) => sessions.some((x) => x.status === s);
   if (has("error")) return "error";
+  if (has("waiting")) return "waiting";
   if (has("working")) return "working";
   if (has("done")) return "done";
   return "idle";
 }
 
 function pickActive(sessions: SessionState[]): SessionState | undefined {
-  const order = (s: SessionState) =>
-    s.status === "working" ? 0 : s.status === "done" ? 1 : s.status === "error" ? 2 : 3;
+  const order = (s: SessionState) => {
+    if (s.status === "waiting") return 0;
+    if (s.status === "working") return 1;
+    if (s.status === "done") return 2;
+    if (s.status === "error") return 3;
+    return 4;
+  };
   return [...sessions].sort((a, b) => {
     const o = order(a) - order(b);
     if (o !== 0) return o;
@@ -65,13 +71,20 @@ export function AgentPill({ agent, sessions, expanded }: Props) {
   const active = pickActive(sessions);
   const count = sessions.length;
   const workingCount = sessions.filter((s) => s.status === "working").length;
+  const waitingCount = sessions.filter((s) => s.status === "waiting").length;
 
   const tool = active?.currentTool;
   const timeText =
     status === "working" && active?.startedAt ? elapsed(active.startedAt) : "";
 
   const countBadge =
-    count > 1 ? (workingCount > 0 ? `×${count} · ${workingCount}忙` : `×${count}`) : null;
+    count > 1
+      ? waitingCount > 0
+        ? `×${count} · ${waitingCount}待批`
+        : workingCount > 0
+          ? `×${count} · ${workingCount}忙`
+          : `×${count}`
+      : null;
   const seqTag = count === 1 && active ? `对话 ${active.seq}` : null;
 
   // The chip text is derived purely from `status`, so it can never lag behind
@@ -88,6 +101,8 @@ export function AgentPill({ agent, sessions, expanded }: Props) {
     );
   } else if (status === "error") {
     chip = "出错";
+  } else if (status === "waiting") {
+    chip = expanded && tool ? `等待审批 · ${tool}` : "等待审批";
   } else if (status === "working") {
     if (expanded && active?.lastPrompt) {
       chip = active.lastPrompt;

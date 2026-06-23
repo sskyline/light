@@ -24,8 +24,10 @@ const EVENT_MAP = new Map([
   ["user_prompt", "user_prompt"],
   ["PreToolUse", "tool_use"],
   ["tool_use", "tool_use"],
-  ["PostToolUse", "notification"],
-  ["PermissionRequest", "notification"],
+  ["PostToolUse", "tool_result"],
+  ["PermissionRequest", "approval_request"],
+  ["approval_request", "approval_request"],
+  ["tool_result", "tool_result"],
   ["PreCompact", "notification"],
   ["PostCompact", "notification"],
   ["SubagentStart", "notification"],
@@ -137,11 +139,23 @@ function pickCommand(parsed) {
 
 function buildMessage(type, hookEvent, parsed, tool) {
   if (type === "user_prompt") return truncate(pickPrompt(parsed), 400);
+  if (type === "approval_request") {
+    const command = pickCommand(parsed);
+    if (command && tool) return truncate(`${tool}: ${command}`, 400);
+    if (command) return truncate(command, 400);
+    return truncate(tool ? `${tool} approval requested` : "approval requested", 400);
+  }
   if (type === "tool_use") {
     const command = pickCommand(parsed);
     if (command && tool) return truncate(`${tool}: ${command}`, 400);
     if (command) return truncate(command, 400);
     return truncate(tool, 400);
+  }
+  if (type === "tool_result") {
+    const command = pickCommand(parsed);
+    if (command && tool) return truncate(`completed: ${tool}: ${command}`, 400);
+    if (command) return truncate(`completed: ${command}`, 400);
+    return truncate(tool ? `${tool} completed` : "tool completed", 400);
   }
   if (type === "notification") {
     const command = pickCommand(parsed);

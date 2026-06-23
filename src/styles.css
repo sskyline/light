@@ -7,6 +7,8 @@
   --c-idle: #8b94a3;
   --c-working: #4ea2ff;
   --c-working-2: #6ad7ff; /* cyan partner for the working aurora gradient */
+  --c-waiting: #ffbf47;
+  --c-waiting-2: #ffe08a;
   --c-done: #25d6a0;
   --c-error: #ff6058;
   --c-music: #ff6fa5;
@@ -139,6 +141,10 @@ body,
   --ring: rgba(120, 206, 255, 0.62);
   --outer-glow: rgba(78, 162, 255, 0.36);
 }
+.island.s-waiting {
+  --ring: rgba(255, 211, 112, 0.7);
+  --outer-glow: rgba(255, 191, 71, 0.38);
+}
 .island.s-done {
   --ring: rgba(82, 230, 184, 0.58);
   --outer-glow: rgba(37, 214, 160, 0.3);
@@ -178,6 +184,7 @@ body,
     inset 0 0 18px -4px var(--ring);
 }
 .island.s-working .aurora,
+.island.s-waiting .aurora,
 .island.s-done .aurora,
 .island.s-error .aurora {
   opacity: 1;
@@ -206,6 +213,9 @@ body,
 .island.s-working .aurora::before {
   animation: sheen 3.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
+.island.s-waiting .aurora::before {
+  animation: sheen 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
 
 .island.s-working .aurora {
   background: linear-gradient(
@@ -226,6 +236,29 @@ body,
     rgba(106, 215, 255, 0.15) 40%,
     rgba(255, 255, 255, 0.26) 50%,
     rgba(78, 162, 255, 0.11) 60%,
+    transparent
+  );
+}
+
+.island.s-waiting .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 191, 71, 0.03),
+    rgba(255, 224, 138, 0.06) 50%,
+    rgba(255, 191, 71, 0.03)
+  );
+  box-shadow: inset 0 0 0 1.5px var(--ring),
+    inset 0 0 13px -2px rgba(255, 191, 71, 0.48),
+    inset 0 0 28px -14px rgba(255, 224, 138, 0.8);
+}
+
+.island.s-waiting .aurora::before {
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 224, 138, 0.16) 40%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 191, 71, 0.12) 60%,
     transparent
   );
 }
@@ -360,6 +393,12 @@ body,
     inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
   animation: pulse 1.6s ease-in-out infinite;
 }
+.dot.waiting {
+  --dot: var(--c-waiting);
+  box-shadow: 0 0 9px 1px rgba(255, 191, 71, 0.65),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.24);
+  animation: waitPulse 1.15s ease-in-out infinite;
+}
 .dot.done {
   --dot: var(--c-done);
   box-shadow: 0 0 9px 1px rgba(37, 214, 160, 0.6),
@@ -382,6 +421,17 @@ body,
   50% {
     box-shadow: 0 0 0 5px rgba(78, 162, 255, 0),
       inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+  }
+}
+@keyframes waitPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 191, 71, 0.62),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.24);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 191, 71, 0),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.24);
   }
 }
 @keyframes popIn {
@@ -427,6 +477,9 @@ body,
 }
 .state-chip.working {
   color: rgba(236, 242, 250, 0.9);
+}
+.state-chip.waiting {
+  color: rgba(255, 225, 156, 0.96);
 }
 .state-chip.idle {
   color: rgba(170, 178, 190, 0.66);
