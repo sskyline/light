@@ -224,6 +224,8 @@ export function installMockBridge(): void {
         systemListeners.forEach((cb) => cb(media));
       }
     },
+    startWindowDrag: () => {},
+    endWindowDrag: () => {},
     setHotZones: () => {},
     quit: () => {},
   };

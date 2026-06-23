@@ -1,0 +1,62 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/codex-hook.mjs\" UserPromptSubmit",
+            "statusMessage": "Light: Codex working"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/codex-hook.mjs\" PreToolUse",
+            "statusMessage": "Light: Codex tool started"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/codex-hook.mjs\" PostToolUse",
+            "statusMessage": "Light: Codex tool finished"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/codex-hook.mjs\" PermissionRequest",
+            "statusMessage": "Light: Codex approval requested"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/codex-hook.mjs\" Stop",
+            "statusMessage": "Light: Codex turn finished"
+          }
+        ]
+      }
+    ]
+  }
+}

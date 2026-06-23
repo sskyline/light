@@ -1,12 +1,14 @@
 export type AgentId = "claude-code" | "codex" | "trae";
 
-export type AgentStatus = "idle" | "working" | "done" | "error";
+export type AgentStatus = "idle" | "working" | "waiting" | "done" | "error";
 
 export type EventType =
   | "session_start"
   | "session_end"
   | "user_prompt"
   | "tool_use"
+  | "approval_request"
+  | "tool_result"
   | "stop"
   | "notification"
   | "error";
@@ -88,6 +90,8 @@ declare global {
       clearEvents: () => void;
       removeSession: (key: string) => void;
       mediaControl: (action: MediaAction) => void;
+      startWindowDrag?: () => void;
+      endWindowDrag?: () => void;
       setHotZones: (zones: HotZone[]) => void;
       quit: () => void;
     };

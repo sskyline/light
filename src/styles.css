@@ -7,6 +7,8 @@
   --c-idle: #8b94a3;
   --c-working: #4ea2ff;
   --c-working-2: #6ad7ff; /* cyan partner for the working aurora gradient */
+  --c-waiting: #ffbf47;
+  --c-waiting-2: #ffe08a;
   --c-done: #25d6a0;
   --c-error: #ff6058;
   --c-music: #ff6fa5;
@@ -16,14 +18,14 @@
   --hairline: rgba(255, 255, 255, 0.09);
 }
 
-/* Typed custom props so the capsule's halo + accent can be *animated*
-   smoothly between states instead of snapping. */
-@property --halo {
+/* Typed custom prop so the capsule's accent can be animated smoothly between
+   states instead of snapping. */
+@property --ring {
   syntax: "<color>";
   inherits: false;
   initial-value: transparent;
 }
-@property --ring {
+@property --outer-glow {
   syntax: "<color>";
   inherits: false;
   initial-value: transparent;
@@ -69,6 +71,7 @@ body,
   justify-content: center;
   align-items: flex-start;
   padding-top: 10px;
+  padding-inline: 24px;
 }
 
 .stage {
@@ -77,6 +80,8 @@ body,
   flex-direction: column;
   align-items: center;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
 }
 
 /* ======================================================================
@@ -93,11 +98,12 @@ body,
   display: flex;
   align-items: center;
   gap: 12px;
+  max-width: 100%;
   padding: 0 16px;
   height: 38px;
   border-radius: 999px;
-  --halo: transparent;
   --ring: transparent;
+  --outer-glow: transparent;
   background: linear-gradient(
       180deg,
       rgba(255, 255, 255, 0.13) 0%,
@@ -110,47 +116,55 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.12);
   /* Layered edge: thin dark outer ring keeps the rim visible on a white
      wallpaper; inset top highlight catches light like a bevelled edge; inset
-     bottom shade gives the glass thickness; the last shadow is the animated
-     state halo (transparent at rest). */
+     bottom shade gives the glass thickness. */
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2),
-    0 14px 34px rgba(0, 0, 0, 0.34),
-    0 3px 9px rgba(0, 0, 0, 0.22),
+    0 6px 12px rgba(0, 0, 0, 0.22),
+    0 2px 6px rgba(0, 0, 0, 0.18),
     inset 0 1px 0.5px rgba(255, 255, 255, 0.4),
     inset 0 -10px 18px -12px rgba(0, 0, 0, 0.4),
-    0 0 26px -4px var(--halo);
+    0 0 12px -7px var(--outer-glow);
   text-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   overflow: hidden;
   /* NEVER transition `transform` here — Framer drives transform for the
      layout + hover animations; a CSS transition on it causes the janky fight
      that made the pill feel laggy. Animate colour/shadow only. */
-  transition: box-shadow 0.35s ease, --halo 0.45s ease, --ring 0.45s ease;
+  transition: box-shadow 0.35s ease, --ring 0.45s ease,
+    --outer-glow 0.45s ease;
   will-change: transform;
+  touch-action: none;
 }
 
-/* Per-state accent. The capsule itself gains a faint coloured halo + ring,
-   so the WHOLE island reacts to state, not just the dot — reads beautifully
-   in motion. */
+/* Per-state accent. The capsule gets a clipped internal ring so state remains
+   visible without an external glow leaking through the transparent window. */
 .island.s-working {
-  --halo: rgba(78, 162, 255, 0.5);
-  --ring: rgba(120, 196, 255, 0.5);
+  --ring: rgba(120, 206, 255, 0.62);
+  --outer-glow: rgba(78, 162, 255, 0.36);
+}
+.island.s-waiting {
+  --ring: rgba(255, 211, 112, 0.7);
+  --outer-glow: rgba(255, 191, 71, 0.38);
 }
 .island.s-done {
-  --halo: rgba(37, 214, 160, 0.42);
-  --ring: rgba(82, 230, 184, 0.5);
+  --ring: rgba(82, 230, 184, 0.58);
+  --outer-glow: rgba(37, 214, 160, 0.3);
 }
 .island.s-error {
-  --halo: rgba(255, 96, 88, 0.46);
-  --ring: rgba(255, 130, 124, 0.55);
+  --ring: rgba(255, 130, 124, 0.64);
+  --outer-glow: rgba(255, 96, 88, 0.34);
 }
 
 .island:hover {
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.22),
-    0 20px 46px rgba(0, 0, 0, 0.44),
-    0 5px 13px rgba(0, 0, 0, 0.28),
+    0 7px 16px rgba(0, 0, 0, 0.28),
+    0 3px 8px rgba(0, 0, 0, 0.22),
     inset 0 1px 0.5px rgba(255, 255, 255, 0.5),
     inset 0 -10px 18px -12px rgba(0, 0, 0, 0.42),
-    0 0 30px -3px var(--halo);
+    0 0 14px -8px var(--outer-glow);
+}
+
+.island.dragging {
+  cursor: move;
 }
 
 /* ---- aurora: the live "working" layer -------------------------------
@@ -167,9 +181,10 @@ body,
   opacity: 0;
   transition: opacity 0.5s ease;
   box-shadow: inset 0 0 0 1px var(--ring),
-    inset 0 0 14px -3px var(--ring);
+    inset 0 0 18px -4px var(--ring);
 }
 .island.s-working .aurora,
+.island.s-waiting .aurora,
 .island.s-done .aurora,
 .island.s-error .aurora {
   opacity: 1;
@@ -198,6 +213,79 @@ body,
 .island.s-working .aurora::before {
   animation: sheen 3.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
+.island.s-waiting .aurora::before {
+  animation: sheen 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.island.s-working .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(78, 162, 255, 0.025),
+    rgba(106, 215, 255, 0.045) 50%,
+    rgba(78, 162, 255, 0.025)
+  );
+  box-shadow: inset 0 0 0 1.5px var(--ring),
+    inset 0 0 12px -2px rgba(78, 162, 255, 0.45),
+    inset 0 0 26px -13px rgba(106, 215, 255, 0.74);
+}
+
+.island.s-working .aurora::before {
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(106, 215, 255, 0.15) 40%,
+    rgba(255, 255, 255, 0.26) 50%,
+    rgba(78, 162, 255, 0.11) 60%,
+    transparent
+  );
+}
+
+.island.s-waiting .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 191, 71, 0.03),
+    rgba(255, 224, 138, 0.06) 50%,
+    rgba(255, 191, 71, 0.03)
+  );
+  box-shadow: inset 0 0 0 1.5px var(--ring),
+    inset 0 0 13px -2px rgba(255, 191, 71, 0.48),
+    inset 0 0 28px -14px rgba(255, 224, 138, 0.8);
+}
+
+.island.s-waiting .aurora::before {
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 224, 138, 0.16) 40%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 191, 71, 0.12) 60%,
+    transparent
+  );
+}
+
+.island.s-done .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(37, 214, 160, 0.04),
+    rgba(82, 230, 184, 0.08) 50%,
+    rgba(37, 214, 160, 0.04)
+  );
+  box-shadow: inset 0 0 0 1.3px var(--ring),
+    inset 0 0 24px -7px rgba(37, 214, 160, 0.44),
+    inset 0 0 12px -8px rgba(82, 230, 184, 0.62);
+}
+
+.island.s-error .aurora {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 96, 88, 0.05),
+    rgba(255, 130, 124, 0.1) 50%,
+    rgba(255, 96, 88, 0.05)
+  );
+  box-shadow: inset 0 0 0 1.35px var(--ring),
+    inset 0 0 25px -7px rgba(255, 96, 88, 0.5),
+    inset 0 0 12px -8px rgba(255, 158, 151, 0.68);
+}
 @keyframes sheen {
   0% {
     transform: translateX(-200%) skewX(-14deg);
@@ -222,10 +310,13 @@ body,
 }
 @keyframes doneBloom {
   0% {
-    box-shadow: inset 0 0 0 1px var(--ring), inset 0 0 0 0 var(--ring);
+    box-shadow: inset 0 0 0 1.1px var(--ring),
+      inset 0 0 8px -7px rgba(37, 214, 160, 0.35);
   }
   40% {
-    box-shadow: inset 0 0 0 1.5px var(--ring), inset 0 0 22px 0 var(--ring);
+    box-shadow: inset 0 0 0 1.5px var(--ring),
+      inset 0 0 22px -4px rgba(37, 214, 160, 0.62),
+      inset 0 0 9px -6px rgba(82, 230, 184, 0.8);
   }
 }
 
@@ -254,12 +345,14 @@ body,
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
 }
 
 .agent {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   white-space: nowrap;
   font-size: 13px;
   letter-spacing: 0.2px;
@@ -300,6 +393,12 @@ body,
     inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
   animation: pulse 1.6s ease-in-out infinite;
 }
+.dot.waiting {
+  --dot: var(--c-waiting);
+  box-shadow: 0 0 9px 1px rgba(255, 191, 71, 0.65),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.24);
+  animation: waitPulse 1.15s ease-in-out infinite;
+}
 .dot.done {
   --dot: var(--c-done);
   box-shadow: 0 0 9px 1px rgba(37, 214, 160, 0.6),
@@ -322,6 +421,17 @@ body,
   50% {
     box-shadow: 0 0 0 5px rgba(78, 162, 255, 0),
       inset 0 -1px 1.5px rgba(0, 0, 0, 0.25);
+  }
+}
+@keyframes waitPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 191, 71, 0.62),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.24);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 191, 71, 0),
+      inset 0 -1px 1.5px rgba(0, 0, 0, 0.24);
   }
 }
 @keyframes popIn {
@@ -354,6 +464,7 @@ body,
   font-size: 12px;
   font-weight: 500;
   padding: 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -366,6 +477,9 @@ body,
 }
 .state-chip.working {
   color: rgba(236, 242, 250, 0.9);
+}
+.state-chip.waiting {
+  color: rgba(255, 225, 156, 0.96);
 }
 .state-chip.idle {
   color: rgba(170, 178, 190, 0.66);
@@ -392,6 +506,7 @@ body,
   font-weight: 600;
   opacity: 0.97;
   letter-spacing: 0.1px;
+  flex-shrink: 0;
 }
 
 .sub {

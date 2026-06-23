@@ -17,6 +17,22 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd approval_request" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd tool_result" }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Forwards a Claude Code hook invocation to the Light desktop app.
 // Usage:  node claude-hook.mjs <event-type>
-// Where <event-type> is one of: user_prompt | tool_use | stop | notification
+// Where <event-type> is one of: user_prompt | tool_use | approval_request | tool_result | stop | notification
 // The Claude Code hook system pipes a JSON payload to stdin, which we
 // parse for sessionId, tool name, and prompt text.
 
@@ -12,7 +12,14 @@ import os from "node:os";
 
 const PORT = Number(process.env.LIGHT_PORT || 51789);
 const HOST = "127.0.0.1";
-const TYPE = process.argv[2];
+const RAW_TYPE = process.argv[2];
+const TYPE_MAP = new Map([
+  ["PermissionRequest", "approval_request"],
+  ["permission_request", "approval_request"],
+  ["PostToolUse", "tool_result"],
+  ["post_tool_use", "tool_result"],
+]);
+const TYPE = TYPE_MAP.get(RAW_TYPE) || RAW_TYPE;
 
 // Debug log so we can see whether Claude is actually invoking us.
 const LOG_PATH = path.join(os.tmpdir(), "light-hook.log");
@@ -23,11 +30,13 @@ function logLine(s) {
     /* ignore */
   }
 }
-logLine(`invoked type=${TYPE} pid=${process.pid} cwd=${process.cwd()}`);
+logLine(`invoked type=${TYPE} raw=${RAW_TYPE || ""} pid=${process.pid} cwd=${process.cwd()}`);
 
 const VALID = new Set([
   "user_prompt",
   "tool_use",
+  "approval_request",
+  "tool_result",
   "stop",
   "notification",
   "error",
@@ -58,8 +67,19 @@ function pickFields(parsed) {
   const tool =
     typeof parsed.tool_name === "string" ? parsed.tool_name : undefined;
   let message;
-  if (typeof parsed.prompt === "string") message = parsed.prompt;
-  else if (typeof parsed.message === "string") message = parsed.message;
+  if (TYPE === "approval_request" || TYPE === "tool_result") {
+    const input = parsed.tool_input && typeof parsed.tool_input === "object" ? parsed.tool_input : {};
+    const command = typeof input.command === "string" ? input.command : undefined;
+    const description = typeof input.description === "string" ? input.description : undefined;
+    const filePath = typeof input.file_path === "string" ? input.file_path : undefined;
+    const detail = command || description || filePath;
+    const prefix = TYPE === "tool_result" ? "completed" : undefined;
+    if (detail && tool) message = prefix ? `${prefix}: ${tool}: ${detail}` : `${tool}: ${detail}`;
+    else if (detail) message = prefix ? `${prefix}: ${detail}` : detail;
+    else if (prefix && tool) message = `${tool} completed`;
+  }
+  if (!message && typeof parsed.prompt === "string") message = parsed.prompt;
+  else if (!message && typeof parsed.message === "string") message = parsed.message;
   return { sessionId, tool, message };
 }
 
