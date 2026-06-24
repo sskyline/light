@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, powerMonitor } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, screen, Tray, Menu, nativeImage, powerMonitor } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { StateStore, type LightEvent, type AppState } from "./state";
@@ -42,6 +42,7 @@ const POSITION_SAVE_DEBOUNCE_MS = 250;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let httpServer: import("node:http").Server | null = null;
 let cursorTimer: NodeJS.Timeout | null = null;
 let positionSaveTimer: NodeJS.Timeout | null = null;
 let displayCorrectionTimer: NodeJS.Timeout | null = null;
@@ -547,7 +548,14 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send("light:memos", list);
   });
 
-  startServer(store, DEFAULT_PORT);
+  httpServer = startServer(store, DEFAULT_PORT, (err) => {
+    const msg =
+      err.code === "EADDRINUSE"
+        ? `Port ${DEFAULT_PORT} is already in use. Another instance of Light may be running.\n\nLight will now quit.`
+        : `HTTP server error (${err.code ?? err.message}). Light will now quit.`;
+    dialog.showErrorBox("Light – Server Error", msg);
+    app.quit();
+  });
   createWindow();
   createTray();
   wireIpc();
@@ -580,6 +588,12 @@ app.on("before-quit", () => {
   }
   saveWindowPositionNow();
   winBridge?.stop();
+  // Gracefully close the HTTP server so the port is released immediately
+  // and a fast restart doesn't hit EADDRINUSE.
+  if (httpServer) {
+    httpServer.close();
+    httpServer = null;
+  }
 });
 
 app.on("window-all-closed", (e: Electron.Event) => {

@@ -9,7 +9,18 @@ import {
 export const DEFAULT_PORT = 51789;
 const MAX_BODY_BYTES = 32 * 1024;
 
-export function startServer(store: StateStore, port: number = DEFAULT_PORT): http.Server {
+/** Returns true when `s` is a parseable date-time string (ISO 8601 or similar). */
+function isValidTimestamp(s: unknown): s is string {
+  if (typeof s !== "string" || s.trim() === "") return false;
+  const t = Date.parse(s);
+  return !Number.isNaN(t);
+}
+
+export function startServer(
+  store: StateStore,
+  port: number = DEFAULT_PORT,
+  onError?: (err: NodeJS.ErrnoException) => void,
+): http.Server {
   const server = http.createServer((req, res) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
 
@@ -58,7 +69,11 @@ export function startServer(store: StateStore, port: number = DEFAULT_PORT): htt
             sessionId: body.sessionId,
             tool: body.tool,
             message: body.message,
-            timestamp: body.timestamp ?? new Date().toISOString(),
+            // Reject non-parseable timestamps; fall back to server time so that
+            // StateStore sorting and STALE_WORKING_MS logic remain correct.
+            timestamp: isValidTimestamp(body.timestamp)
+              ? body.timestamp
+              : new Date().toISOString(),
           };
           const ingested = store.ingest(evt);
           res.statusCode = 200;
@@ -75,6 +90,13 @@ export function startServer(store: StateStore, port: number = DEFAULT_PORT): htt
 
     res.statusCode = 404;
     res.end(JSON.stringify({ ok: false, error: "not found" }));
+  });
+
+  // Surface listen errors (e.g. EADDRINUSE) instead of letting the process
+  // crash silently with an unhandled 'error' event.
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    console.error("[server] HTTP server error:", err.message);
+    if (onError) onError(err);
   });
 
   server.listen(port, "127.0.0.1");
