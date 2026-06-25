@@ -46,6 +46,16 @@ function formatTime(iso: string): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+function eventIdentity(e: LightEvent & { _key: string; _agent: AgentId }): string {
+  return [
+    e._key,
+    e.timestamp,
+    e.type,
+    e.tool ?? "",
+    e.message ?? "",
+  ].join("|");
+}
+
 function statusLine(a: SessionState): string {
   switch (a.status) {
     case "idle":
@@ -63,6 +73,7 @@ function statusLine(a: SessionState): string {
 
 export function ExpandPanel({ sessions, memos, system }: Props) {
   const [draft, setDraft] = useState("");
+  const [expandedEventKey, setExpandedEventKey] = useState<string | null>(null);
 
   const allEvents = sessions
     .flatMap((s) => s.recent.map((e) => ({ ...e, _key: s.key, _agent: s.agent })))
@@ -175,15 +186,34 @@ export function ExpandPanel({ sessions, memos, system }: Props) {
             {allEvents.length === 0 ? (
               <div className="empty">暂无事件</div>
             ) : (
-              allEvents.map((e, i) => (
-                <div className="evt" key={`${e.timestamp}-${i}`}>
-                  <span className="evt-time">{formatTime(e.timestamp)}</span>
-                  <span className="evt-tag">{EVENT_TAG[e.type]}</span>
-                  <span className="evt-text">
-                    {e.tool ?? e.message ?? AGENT_LABEL[e._agent as AgentId]}
-                  </span>
-                </div>
-              ))
+              allEvents.map((e) => {
+                const eventKey = eventIdentity(e);
+                const expanded = expandedEventKey === eventKey;
+                return (
+                  <div className={`evt-wrap ${expanded ? "expanded" : ""}`} key={eventKey}>
+                    <button
+                      className="evt"
+                      type="button"
+                      onClick={() => setExpandedEventKey(expanded ? null : eventKey)}
+                      aria-expanded={expanded}
+                    >
+                      <span className="evt-time">{formatTime(e.timestamp)}</span>
+                      <span className="evt-tag">{EVENT_TAG[e.type]}</span>
+                      <span className="evt-text">
+                        {e.message ?? e.tool ?? AGENT_LABEL[e._agent as AgentId]}
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div className="evt-detail">
+                        <DetailRow label="来源" value={AGENT_LABEL[e._agent as AgentId]} />
+                        <DetailRow label="事件" value={e.type} />
+                        <DetailRow label="工具" value={e.tool} />
+                        <DetailRow label="详情" value={e.message} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -215,6 +245,16 @@ const ITEM: Variants = {
   hidden: { opacity: 0, y: 8 },
   show: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } },
 };
+
+function DetailRow({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
+  return (
+    <div className="evt-detail-row">
+      <span className="evt-detail-label">{label}</span>
+      <span className="evt-detail-value">{value}</span>
+    </div>
+  );
+}
 
 function MemoRow({ memo }: { memo: Memo }) {
   const handleToggle = () => {

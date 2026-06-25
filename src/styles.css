@@ -720,13 +720,36 @@ body,
   gap: 3px;
 }
 
+.evt-wrap {
+  border-radius: 6px;
+}
+
+.evt-wrap.expanded {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .evt {
   display: flex;
+  width: 100%;
   gap: 8px;
   align-items: baseline;
   font-size: 12px;
   opacity: 0.88;
   padding: 1px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.evt:hover {
+  opacity: 1;
+}
+
+.evt-wrap.expanded .evt {
+  padding: 3px 6px 1px;
 }
 
 .evt-time {
@@ -753,6 +776,33 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.evt-detail {
+  display: grid;
+  gap: 3px;
+  padding: 5px 8px 7px 68px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(226, 235, 247, 0.72);
+}
+
+.evt-detail-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.evt-detail-label {
+  color: rgba(210, 220, 236, 0.42);
+}
+
+.evt-detail-value {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, Consolas, monospace;
 }
 
 .empty {
