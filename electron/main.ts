@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, powerMonitor } from "electron";
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, powerMonitor, dialog } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { StateStore, type LightEvent, type AppState } from "./state";
@@ -6,6 +6,7 @@ import { DEFAULT_PORT, startServer } from "./server";
 import { MemoStore, type Memo } from "./memos";
 import { SystemStore, type SystemState } from "./system";
 import { WinBridge, type MediaAction } from "./winbridge";
+import { formatInstallHooksResult, installHooks } from "./hookInstaller";
 
 interface HotZone {
   x: number;
@@ -478,6 +479,10 @@ function createTray(): void {
           else mainWindow.showInactive();
         },
       },
+      {
+        label: "接入 Hooks...",
+        click: () => installHooksFromTray(),
+      },
       { type: "separator" },
       ...displayItems,
       { type: "separator" },
@@ -489,6 +494,54 @@ function createTray(): void {
   };
   refresh();
   tray.on("click", () => { refresh(); tray?.popUpContextMenu(); });
+}
+
+function installHooksFromTray(): void {
+  try {
+    const execPath = resolveHookExecPath();
+    if (!execPath) return;
+    const result = installHooks({
+      appPath: app.getAppPath(),
+      execPath,
+      userDataPath: app.getPath("userData"),
+    });
+    const hasError = Boolean(result.claude.error || result.codex.error);
+    dialog.showMessageBox({
+      type: hasError ? "warning" : "info",
+      title: "Light Hooks",
+      message: hasError ? "Hooks 接入部分失败" : "Hooks 接入完成",
+      detail: formatInstallHooksResult(result),
+      buttons: ["OK"],
+    });
+  } catch (err) {
+    dialog.showErrorBox(
+      "Hooks 接入失败",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+function resolveHookExecPath(): string | null {
+  if (process.platform !== "darwin" || !process.execPath.startsWith("/Volumes/")) {
+    return process.execPath;
+  }
+  const bundleName = path.basename(path.resolve(path.dirname(process.execPath), "../../.."));
+  const candidate = path.join(
+    "/Applications",
+    bundleName.endsWith(".app") ? bundleName : `${app.getName()}.app`,
+    "Contents",
+    "MacOS",
+    path.basename(process.execPath),
+  );
+  if (fs.existsSync(candidate)) return candidate;
+  dialog.showMessageBox({
+    type: "warning",
+    title: "请先安装 Light",
+    message: "请先把 Light 拖到 Applications，再接入 Hooks。",
+    detail: "当前 Light 正在从 DMG 挂载盘运行。如果现在写入 hook 配置，DMG 卸载后路径会失效。",
+    buttons: ["OK"],
+  });
+  return null;
 }
 
 function wireIpc(): void {
