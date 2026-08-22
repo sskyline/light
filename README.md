@@ -183,7 +183,7 @@ light/
 | `session_start` | → `idle`，清空 currentTool |
 | `user_prompt` | → `working`，记录 startedAt 与 lastPrompt |
 | `tool_use` | → `working`，更新 currentTool |
-| `approval_request` | → `waiting`，显示等待审批；直到后续事件覆盖 |
+| `approval_request` | → `waiting`，显示等待审批；1 分钟无新事件则自动转 `idle` |
 | `tool_result` | → `working`，清掉等待审批/当前工具，本轮仍在进行 |
 | `stop` | → `done`，8 秒后自动转 `idle` |
 | `error` | → `error`，5 秒后自动转 `idle` |

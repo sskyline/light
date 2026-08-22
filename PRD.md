@@ -131,7 +131,7 @@
 ```
 user_prompt    → working
 tool_use       → working（更新 currentTool 字段）
-approval_request → waiting（提示返回审批，直到后续事件覆盖）
+approval_request → waiting（提示返回审批，1 分钟无新事件则自动转 idle）
 tool_result    → working（工具已完成，清掉 waiting/currentTool，本轮仍在进行）
 stop           → done（8s 后自动转 idle）
 error          → error（5s 后自动转 idle）

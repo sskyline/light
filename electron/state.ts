@@ -45,6 +45,9 @@ const ERROR_LINGER_MS = 5_000;
 // agent crashed / lost network / was killed, and drop it back to idle so the
 // timer stops climbing forever.
 const STALE_WORKING_MS = 4 * 60_000;
+// Approval requests should not keep an abandoned session at the top forever.
+// A later tool event can still move the session back to working as usual.
+const STALE_WAITING_MS = 60_000;
 const IDLE_GC_MS = 30 * 60_000; // drop idle sessions after 30 min of no activity
 const RECENT_CAP = 30;
 
@@ -235,20 +238,24 @@ export class StateStore extends EventEmitter {
     const cur = this.sessions.get(key);
     if (!cur) return;
 
-    // done/error linger briefly then settle to idle. "working" gets a much
-    // longer watchdog so a crashed/disconnected agent doesn't climb forever.
-    // "waiting" intentionally persists until the user approves/denies and a
-    // follow-up tool_result/tool_use/stop/session_end event arrives.
+    // done/error linger briefly then settle to idle. Active states use
+    // watchdogs so a crashed/disconnected agent cannot remain visible forever.
     let delay = 0;
     if (cur.status === "done") delay = DONE_LINGER_MS;
     else if (cur.status === "error") delay = ERROR_LINGER_MS;
     else if (cur.status === "working") delay = STALE_WORKING_MS;
+    else if (cur.status === "waiting") delay = STALE_WAITING_MS;
     else return;
 
     const timer = setTimeout(() => {
       const c = this.sessions.get(key);
       if (!c) return;
-      if (c.status === "done" || c.status === "error" || c.status === "working") {
+      if (
+        c.status === "done" ||
+        c.status === "error" ||
+        c.status === "working" ||
+        c.status === "waiting"
+      ) {
         c.status = "idle";
         c.startedAt = undefined;
         c.currentTool = undefined;

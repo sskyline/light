@@ -96,7 +96,7 @@ C:/Users/你的用户名/light
 |---|---|---|
 | `UserPromptSubmit` | `user_prompt` | 创建会话、切到 working，并从这一刻开始计时 |
 | `PreToolUse` | `tool_use` | 显示当前工具 |
-| `PermissionRequest` | `approval_request` | 切到 waiting，提示返回审批 |
+| `PermissionRequest` | `approval_request` | 切到 waiting，1 分钟无新事件则自动转 idle |
 | `PostToolUse` | `tool_result` | 工具完成，清掉 waiting 并回到 working |
 | `Stop` | `stop` | 本轮完成，显示 done |
 
