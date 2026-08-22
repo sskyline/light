@@ -1,4 +1,4 @@
-# 打包 Light 安装包（Inno Setup）
+# Windows 打包与安装器
 
 整个流程不需要 electron-builder，也不会重新下载 Electron —— 直接复用
 `node_modules` 里已缓存的 Electron 运行时。
@@ -20,12 +20,17 @@ npm run dist
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\light.iss
 ```
 
-产物：`release\Light-Setup-1.0.0.exe` —— 这就是发给别人下载的安装包。
+发布前先把 `installer/light.iss` 中的 `MyAppVersion` 与 `package.json` 同步。产物为
+`release\Light-Setup-<version>.exe`。
+
+> 当前限制：Windows staging 把 Hook 脚本放在 `release/Light/hooks`，但托盘 Hook
+> 安装器仍从 `resources/app/hooks` 查找。修复资源路径前，Windows 安装版请按
+> [Hooks 接入文档](hooks.md) 手动配置。
 
 ## 安装包特性
 
 - **免管理员**：默认按"当前用户"安装到 `%LocalAppData%\Programs\Light`，不弹 UAC。
-- **开始菜单 / 桌面 / 开机自启** 快捷方式可在安装时勾选。
+- 开始菜单快捷方式会自动创建；桌面和开机自启快捷方式可在安装时勾选。
 - 升级时自动结束正在运行的 `Light.exe`，覆盖安装不报错。
 - 卸载时自动关闭程序；用户数据（备忘录）在 `%AppData%\light`，卸载不动它。
 

@@ -1,4 +1,4 @@
-# Hooks 接入说明
+# Hooks 接入与排障
 
 Light 通过本地 HTTP 服务（`127.0.0.1:51789`）接收状态事件。本目录提供两类接入脚本：
 
@@ -52,7 +52,7 @@ node 也认，例如 `C:/Users/你的用户名/light`）：
 - 进新窗口先敲 `/hooks` 确认这些 hook 已注册；如有"信任此 hook"提示，确认放行。
 - `claude-hook.mjs` 读取 Claude 通过 stdin 推来的 JSON（`session_id`、`tool_name`、`prompt`），提取后 POST 给 Light，并在 `%TEMP%\light-hook.log` 留一行调用日志（排错用）。
 - Light 没启动时脚本静默退出，不会阻塞 Claude 的 hook 流水线。
-- Mac / Linux 用 `claude-hook.sh`（`chmod +x`），命令写 `bash /path/claude-hook.sh user_prompt`。
+- macOS / Linux 也可以直接使用上面的 `node .../claude-hook.mjs`；如需 shell 入口，可使用 `claude-hook.sh`（先 `chmod +x`）。
 
 ## 2. Codex CLI
 
@@ -62,7 +62,7 @@ done。
 
 ### 推荐：Codex 官方 hooks
 
-把 [codex-hooks.example.json](codex-hooks.example.json) 里的内容合并到：
+把 [Codex Hooks 示例](../hooks/codex-hooks.example.json) 里的内容合并到：
 
 ```text
 ~/.codex/hooks.json
@@ -100,13 +100,13 @@ C:/Users/你的用户名/light
 | `PostToolUse` | `tool_result` | 工具完成，清掉 waiting 并回到 working |
 | `Stop` | `stop` | 本轮完成，显示 done |
 
-Codex 官方 hooks 是 thread/turn 级事件，不是 CLI 进程级事件。只进入一个空 CLI 时
-通常不会给 Light 任何事件；Light 从 `UserPromptSubmit` 开始创建会话并计时。
+Light 当前的 Codex 默认配置以 turn 事件为主，只进入一个空 CLI 时通常不会创建
+Light 会话；会话从 `UserPromptSubmit` 开始计时，本轮结束后短暂展示 done/error，
+然后回到“空闲”。
 
-Codex 当前没有进程退出/窗口关闭 hook，所以打开 `/hooks` 时不会出现 `SessionEnd`。
-本轮结束后，Light 会短暂展示 done/error，然后回到“空闲”。
-旧配置里如果还保留 `SessionStart`，`codex-hook.mjs` 会直接忽略它，避免它和
-`UserPromptSubmit` 连续触发时把 working 状态重置成 idle。
+`codex-cli 0.146.0` 已能触发 `SessionStart`，并声明了 `SessionEnd` 事件，但 Light 当前
+尚未把它们加入默认安装配置。适配器会忽略 `SessionStart`，`SessionEnd` 的实际结束语义
+仍需验证。因此这里不把它们作为稳定的进程生命周期能力承诺。
 
 `codex-hook.mjs` 会在 `%TEMP%/light-codex-hook.log`（macOS/Linux 为系统临时目录）
 记录调用和转发结果。若要排查 Codex 传入的原始 JSON，可临时设置：
@@ -151,7 +151,7 @@ codex-wrap.cmd exec "explain this repo"
 
 | 变量 | 默认 | 作用 |
 |---|---|---|
-| `LIGHT_PORT` | `51789` | Light HTTP 端口（如改了主进程端口需同步） |
+| `LIGHT_PORT` | `51789` | 仅改变 Hook/包装脚本的目标端口；Light 主进程当前固定监听 51789，通常不要修改 |
 | `CODEX_BIN` | `codex` | Codex 二进制路径（PATH 里没有 codex 时用） |
 
 ## 4. 手动测试
