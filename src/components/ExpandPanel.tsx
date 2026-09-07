@@ -10,6 +10,12 @@ const AGENT_LABEL: Record<AgentId, string> = {
   trae: "Trae",
 };
 
+const LAUNCH_TARGETS: { agent: AgentId; label: string }[] = [
+  { agent: "antigravity", label: "Antigravity" },
+  { agent: "codex", label: "Codex" },
+  { agent: "claude-code", label: "Claude" },
+];
+
 const EVENT_TAG: Record<LightEvent["type"], string> = {
   session_start: "start",
   session_end: "end",
@@ -26,6 +32,7 @@ interface Props {
   sessions: SessionState[];
   memos: Memo[];
   system: SystemState;
+  onClose?: () => void;
 }
 
 function formatDuration(fromIso?: string): string {
@@ -72,7 +79,7 @@ function statusLine(a: SessionState): string {
   }
 }
 
-export function ExpandPanel({ sessions, memos, system }: Props) {
+export function ExpandPanel({ sessions, memos, system, onClose }: Props) {
   const [draft, setDraft] = useState("");
   const [expandedEventKey, setExpandedEventKey] = useState<string | null>(null);
 
@@ -100,6 +107,25 @@ export function ExpandPanel({ sessions, memos, system }: Props) {
       exit="exit"
     >
       <span className="glass-sheen" aria-hidden="true" />
+
+      <motion.div className="section" variants={ITEM}>
+        <div className="launcher-row">
+          {LAUNCH_TARGETS.map(({ agent, label }) => (
+            <button
+              key={agent}
+              className="launch-btn"
+              type="button"
+              title={`打开或切换到 ${label}`}
+              onClick={() => {
+                window.light?.switchToApp(agent);
+                onClose?.();
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </motion.div>
 
       <motion.div className="section" variants={ITEM}>
         <div className="section-head">

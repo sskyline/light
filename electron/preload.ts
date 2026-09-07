@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("light", {
   deleteMemo: (id: string) => ipcRenderer.send("light:delete-memo", id),
   clearEvents: () => ipcRenderer.send("light:clear-events"),
   removeSession: (key: string) => ipcRenderer.send("light:remove-session", key),
+  switchToApp: (agent: string) => ipcRenderer.send("light:switch-app", agent),
   mediaControl: (action: string) => ipcRenderer.send("light:media-control", action),
   startWindowDrag: () => ipcRenderer.send("light:start-window-drag"),
   endWindowDrag: () => ipcRenderer.send("light:end-window-drag"),

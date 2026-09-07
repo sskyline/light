@@ -218,6 +218,9 @@ export function installMockBridge(): void {
     },
     clearEvents: () => {},
     removeSession: () => {},
+    switchToApp: (agent) => {
+      console.info("[mock] switchToApp", agent);
+    },
     mediaControl: (action: MediaAction) => {
       if (media.media && (action === "playpause" || action === "play" || action === "pause")) {
         media.media = { ...media.media, playing: !media.media.playing };

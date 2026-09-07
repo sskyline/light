@@ -290,6 +290,7 @@ export function Island({ sessions, memos, system }: Props) {
               sessions={sessions.filter((s) => s.status !== "idle" || s.recent.length > 0)}
               memos={memos}
               system={system}
+              onClose={() => setOpen(false)}
             />
           </div>
         )}
