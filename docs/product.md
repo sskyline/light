@@ -2,10 +2,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 产品版本 | 1.0.4 |
+| 产品版本 | 1.0.5 |
 | 文档状态 | 当前实现基线 |
-| 更新日期 | 2026-08-22 |
-| 支持对象 | Claude Code、Codex CLI；协议层兼容 Trae |
+| 更新日期 | 2026-09-07 |
+| 支持对象 | Claude Code、Codex CLI、Antigravity；协议层兼容 Trae |
 | 核心原则 | 一眼可见、安静常驻、本地优先 |
 
 ## 1. 产品定义
@@ -39,6 +39,7 @@ Light 用统一事件协议、会话状态机和超时看门狗解决这些问�
 - 用户无需切换窗口即可在一秒内判断 Agent 的整体状态。
 - 等待审批和错误必须比普通工作状态更醒目。
 - Claude Code 与 Codex 能通过官方 Hooks 自动上报关键生命周期事件。
+- Antigravity 通过原生 Hooks 上报任务开始、工具完成、任务完成/出错；暂不检测等待审批和窗口关闭。
 - 多条并发会话互相隔离，同时可聚合为 Agent 级与全局状态。
 - 应用保持轻量、安静，不抢焦点，不把状态数据上传到云端。
 - Hook 接入、升级和故障排查对普通用户足够简单。
@@ -83,11 +84,12 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 
 ## 5. 功能范围
 
-| 模块 | 1.0.4 状态 | 说明 |
+| 模块 | 1.0.5 状态 | 说明 |
 |---|---|---|
 | 五态状态胶囊 | 已实现 | idle / working / waiting / done / error |
 | Claude Code Hooks | 已实现 | 包含会话、任务、工具、审批、完成事件 |
 | Codex 官方 Hooks | 已实现 | turn 级任务、工具、审批和完成事件 |
+| Antigravity Hooks | 已实现 | 任务计时、工具完成记录、完成/出错；不接管工具权限 |
 | 托盘一键安装 Hooks | 部分实现 | macOS 安装版可用；Windows staging 资源路径待修复 |
 | 多 Agent / 多会话 | 已实现 | 独立状态、聚合展示、手动移除 |
 | 事件流与详情 | 已实现 | 每会话缓存 30 条，面板聚合显示 14 条 |
@@ -151,7 +153,7 @@ Light 支持五种会话状态：
 ### 6.3 聚合与多会话
 
 - 会话唯一键由 `agent + sessionId` 组成；缺失 session ID 时使用默认会话。
-- Claude Code、Codex、Trae 的会话必须互不覆盖。
+- Claude Code、Codex、Antigravity、Trae 的会话必须互不覆盖。
 - 每个 Agent 可以同时存在多条会话，并显示会话数量、繁忙数量或待审批数量。
 - 全局胶囊状态优先级为：`error > waiting > working > done > idle`。
 - 同一 Agent 的代表会话优先选择待审批、工作中和最近活动的会话。
@@ -271,7 +273,7 @@ Local memo JSON <─────────────────────
 
 ```json
 {
-  "agent": "claude-code | codex | trae",
+  "agent": "claude-code | codex | antigravity | trae",
   "type": "session_start | session_end | user_prompt | tool_use | approval_request | tool_result | stop | notification | error",
   "sessionId": "optional string",
   "tool": "optional string",

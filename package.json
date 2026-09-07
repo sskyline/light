@@ -1,8 +1,8 @@
 {
   "name": "light",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
-  "description": "桌面状态胶囊 · 实时显示 Claude Code 与 Codex 的工作状态",
+  "description": "桌面状态胶囊 · 实时显示 Claude Code、Codex 与 Antigravity 的工作状态",
   "author": "Light",
   "license": "MIT",
   "main": "dist-electron/main.js",
@@ -16,7 +16,8 @@
     "dist": "npm run build && npm run stage",
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "start": "electron .",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "npm run build:electron && node --test tests/*.test.mjs"
   },
   "build": {
     "appId": "com.light.app",

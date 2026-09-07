@@ -1,15 +1,15 @@
 # Light · 桌面状态胶囊
 
-Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code 与 Codex CLI 的生命周期 Hooks，实时显示 AI 会话正在工作、等待审批、已经完成或发生错误。
+Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Codex CLI 与 Antigravity 的生命周期 Hooks，实时显示 AI 会话的工作、完成和出错状态；Claude Code 与 Codex 还支持等待审批状态。
 
-当前版本：`1.0.4`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
+当前版本：`1.0.5`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
 
 ## 能做什么
 
 - 实时展示 `idle`、`working`、`waiting`、`done`、`error` 五种状态。
-- 同时跟踪 Claude Code、Codex 和多个并发会话，显示当前工具、任务摘要与运行时长。
+- 同时跟踪 Claude Code、Codex、Antigravity 和多个并发会话，按各工具支持的事件显示状态、工具记录与运行时长。
 - 点击展开状态列表、最近事件流和事件详情；异常残留会话可以手动移除。
-- 在托盘中一键把 Light Hooks 安全合并到 Claude Code 与 Codex 配置。
+- 在托盘中一键把 Light Hooks 安全合并到 Claude Code、Codex 与 Antigravity 配置。
 - 支持拖动胶囊、记住位置、切换显示器，并在显示器变化或系统唤醒后修正位置。
 - 提供本地备忘录；Windows 还可显示并控制系统媒体播放。
 - 所有状态通过 `127.0.0.1:51789` 在本机传递，不依赖云端服务。
@@ -65,7 +65,7 @@ Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code 与 Co
 
 如果没有对应平台的 Release，可以按下文“开发与打包”从源码运行或构建。
 
-## 接入 Claude Code 与 Codex
+## 接入 Claude Code、Codex 与 Antigravity
 
 ### 推荐：托盘一键接入（macOS 安装版）
 
@@ -74,16 +74,22 @@ Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code 与 Co
 3. Light 会把 Hook 脚本复制到自己的用户数据目录，并安全合并到：
    - Claude Code：`~/.claude/settings.json`
    - Codex：`~/.codex/hooks.json`
-4. 如果原配置发生修改，Light 会先创建带时间戳的备份；已有 Light Hook 会跳过，其他 Hook 不会被删除。
+   - Antigravity：`~/.gemini/config/hooks.json`
+4. 如果原配置发生修改，Light 会先创建带时间戳的备份；已有安装器生成的 Hook 会更新到当前应用路径，自定义命令及其他 Hook 保持不变。
 5. 完全重启 Claude Code / Codex，在 CLI 中执行 `/hooks`，确认并信任新增 Hook。
+6. Antigravity 在新一轮对话加载配置；如果未生效，按原有启动方式完全退出并重新打开。
 
 macOS 安装版使用 Electron 自身执行 Hook 脚本，因此不要求另外为 Hook 配置 Node 路径。当前 Windows staging 的 Hook 资源路径仍待修复，请先按手动方式接入。
+
+从开发版升级到 DMG 安装版时，先退出开发版 Light，把新版拖入“应用程序”，启动后再点一次“接入 Hooks...”。安装器会将自己生成的开发版执行路径迁移到安装版，保留其他处理器、matcher 和禁用设置。
 
 ### 手动接入
 
 需要 Windows 接入、项目级配置、自定义脚本路径、Codex 进程级包装或排查 Hook 日志时，请阅读 [Hooks 接入与排障](docs/hooks.md)。
 
 Claude Code 使用 `SessionStart` 与 `SessionEnd` 管理会话。Light 当前的 Codex 默认配置从 `UserPromptSubmit` 开始上报，尚未接入 Codex 的 Session 生命周期事件；如需进程级检测，可使用 `hooks/codex-wrap.*`。
+
+Antigravity 使用 `PreInvocation`、`PostToolUse` 和 `Stop`，支持任务计时、工具完成记录及完成/出错状态。当前不检测等待审批、执行中的工具或窗口关闭，也不采集 prompt。安装不会配置 VPN 或更改启动方式，详见 [Antigravity 接入说明](docs/hooks.md#3-antigravity)。
 
 ## 状态机
 
@@ -137,7 +143,7 @@ curl -X POST http://127.0.0.1:51789/event \
 
 ```json
 {
-  "agent": "claude-code | codex | trae",
+  "agent": "claude-code | codex | antigravity | trae",
   "type": "session_start | session_end | user_prompt | tool_use | approval_request | tool_result | stop | notification | error",
   "sessionId": "可选；区分同一 agent 的并发会话",
   "tool": "可选；工具名",
@@ -200,7 +206,7 @@ light/
 │   ├── winbridge.ts     # Windows SMTC bridge
 │   └── preload.ts       # 隔离的渲染层 IPC bridge
 ├── src/                 # React + Framer Motion 界面
-├── hooks/               # Claude Code / Codex Hook 与包装脚本
+├── hooks/               # Claude Code / Codex / Antigravity Hook 与包装脚本
 ├── bridge/              # Windows PowerShell 媒体桥接
 ├── installer/           # macOS/Windows 图标与 Inno Setup 配置
 ├── scripts/             # 开发启动和 Windows staging

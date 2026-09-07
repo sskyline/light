@@ -12,7 +12,7 @@ interface Props {
   system: SystemState;
 }
 
-const AGENT_ORDER: AgentId[] = ["claude-code", "codex", "trae"];
+const AGENT_ORDER: AgentId[] = ["claude-code", "codex", "antigravity", "trae"];
 const DRAG_THRESHOLD_PX = 5;
 
 interface DragState {

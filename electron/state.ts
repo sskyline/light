@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 
-export type AgentId = "claude-code" | "codex" | "trae";
+export type AgentId = "claude-code" | "codex" | "antigravity" | "trae";
 export type AgentStatus = "idle" | "working" | "waiting" | "done" | "error";
 export type EventType =
   | "session_start"
@@ -51,7 +51,7 @@ const STALE_WAITING_MS = 60_000;
 const IDLE_GC_MS = 30 * 60_000; // drop idle sessions after 30 min of no activity
 const RECENT_CAP = 30;
 
-const VALID_AGENTS = new Set<AgentId>(["claude-code", "codex", "trae"]);
+const VALID_AGENTS = new Set<AgentId>(["claude-code", "codex", "antigravity", "trae"]);
 const VALID_TYPES = new Set<EventType>([
   "session_start",
   "session_end",

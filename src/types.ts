@@ -1,4 +1,4 @@
-export type AgentId = "claude-code" | "codex" | "trae";
+export type AgentId = "claude-code" | "codex" | "antigravity" | "trae";
 
 export type AgentStatus = "idle" | "working" | "waiting" | "done" | "error";
 

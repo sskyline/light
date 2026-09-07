@@ -1,6 +1,6 @@
 # Hooks 接入与排障
 
-Light 通过本地 HTTP 服务（`127.0.0.1:51789`）接收状态事件。本目录提供两类接入脚本：
+Light 通过本地 HTTP 服务（`127.0.0.1:51789`）接收状态事件。本目录提供三类接入脚本：
 
 ## 1. Claude Code
 
@@ -147,14 +147,63 @@ Set-Alias codex 'C:\path\to\light\hooks\codex-wrap.cmd'
 codex-wrap.cmd exec "explain this repo"
 ```
 
-## 3. 自定义环境变量
+## 3. Antigravity
+
+支持 Antigravity 原生 lifecycle hooks，已在 macOS Antigravity 2.12.2 上验证。
+托盘“接入 Hooks...”会合并配置，也可以把 [配置示例](../hooks/antigravity-hooks.example.json)
+中的 `<LIGHT_DIR>` 换成本机 Light 项目的绝对路径后，合并到：
+
+```text
+~/.gemini/config/hooks.json
+```
+
+项目级配置可以放在 `<项目目录>/.agents/hooks.json`。全局和项目级任选一处，避免重复上报。
+需要手动运行脚本时使用 `node "<LIGHT_DIR>/hooks/antigravity-hook.mjs" <事件名>`。
+
+Antigravity 的 JSON 顶层是具名 hook（示例为 `light-antigravity`），不是 Claude/Codex
+的 `hooks` 字段。`PreInvocation` 和 `Stop` 使用平铺的处理器数组，`PostToolUse` 使用
+`matcher` / `hooks` 包装。托盘安装会保留其他 hook、已有处理器及 `enabled: false` 设置，
+重复安装会补齐缺少的事件，并把安装器生成的旧执行路径更新到当前 Light 应用。
+自定义包装命令不会被替换；配置无法解析时会报错并保留原文件。
+
+| Antigravity hook | Light 事件 | 效果 |
+|---|---|---|
+| `PreInvocation`，`invocationNum = 0` | `user_prompt` | 开始本轮任务、从零计时 |
+| `PreInvocation`，`invocationNum > 0` | `tool_result` | 继续 working，保留本轮计时 |
+| `PostToolUse` | `tool_result` | 记录已完成的工具，继续 working |
+| `Stop`，无错误且 `fullyIdle` 不为 false | `stop` | 本轮完成，显示 done |
+| `Stop`，`fullyIdle = false` 且无错误 | `tool_result` | 后台仍有工作，暂不显示完成 |
+| `Stop`，非空 `error` 或原因是 `ERROR` | `error` | 本轮异常，显示 error |
+
+`conversationId` 用于区分会话；每轮 `invocationNum` 从 0 开始，避免工具调用后的模型
+循环反复重置计时。工具自身的错误写入事件详情，由后续 `Stop` 决定整个任务是否失败。
+`PostToolUse` 会使用可选的 `toolCall.name`（2.12.2 实测存在）；缺少时仍能上报工具完成。
+
+**接入范围：**
+
+- 默认不注册 `PreToolUse`：它的返回值参与权限控制，实测空对象也可能影响工具执行；
+  不要把此适配器挂到该事件，更不要为状态采集返回自动授权的 `allow`。
+- 不注册 `PostInvocation`：模型调用结束不等于整个任务完成。
+- 没有独立的等待审批、会话打开/关闭事件，不能准确显示这些状态，也不显示执行中的工具。
+  完成/出错后按 Light 的通用规则回到空闲，长期空闲会话自动回收。
+- 不读取 transcript、prompt 或工具参数，只使用 hook 的会话、工具名和结果元数据。
+- 标准输出始终是 `{}`，不注入步骤或强制继续；Light 离线、输入异常或传输超时均正常退出。
+  接入脚本的网络等待最多 800ms，安装配置的总超时为 3 秒。
+
+日志位于系统临时目录下的 `light-antigravity-hook.log`，只记录事件类型和转发状态，
+不记录原始输入。配置会在新一轮对话加载；未生效时按原有方式重启 Antigravity。
+需要代理的用户继续使用原来的代理启动方式，Hook 安装不修改 VPN、`.zshrc` 或应用启动配置。
+
+参考：[Antigravity 官方 Hooks 文档](https://antigravity.google/docs/hooks)。
+
+## 4. 自定义环境变量
 
 | 变量 | 默认 | 作用 |
 |---|---|---|
 | `LIGHT_PORT` | `51789` | 仅改变 Hook/包装脚本的目标端口；Light 主进程当前固定监听 51789，通常不要修改 |
 | `CODEX_BIN` | `codex` | Codex 二进制路径（PATH 里没有 codex 时用） |
 
-## 4. 手动测试
+## 5. 手动测试
 
 不装 hook 也可以直接 POST 事件验证 Light 是否工作：
 

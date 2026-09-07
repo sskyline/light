@@ -505,7 +505,7 @@ function installHooksFromTray(): void {
       execPath,
       userDataPath: app.getPath("userData"),
     });
-    const hasError = Boolean(result.claude.error || result.codex.error);
+    const hasError = Boolean(result.claude.error || result.codex.error || result.antigravity.error);
     dialog.showMessageBox({
       type: hasError ? "warning" : "info",
       title: "Light Hooks",

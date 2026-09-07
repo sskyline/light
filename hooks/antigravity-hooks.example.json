@@ -1,0 +1,30 @@
+{
+  "light-antigravity": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node \"<LIGHT_DIR>/hooks/antigravity-hook.mjs\" PreInvocation",
+        "timeout": 3
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/antigravity-hook.mjs\" PostToolUse",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node \"<LIGHT_DIR>/hooks/antigravity-hook.mjs\" Stop",
+        "timeout": 3
+      }
+    ]
+  }
+}

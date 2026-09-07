@@ -5,11 +5,13 @@ import type { AgentId, AgentStatus, SessionState } from "../types";
 const AGENT_SHORT: Record<AgentId, string> = {
   "claude-code": "Claude",
   codex: "Codex",
+  antigravity: "Antigravity",
   trae: "Trae",
 };
 const AGENT_FULL: Record<AgentId, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
+  antigravity: "Antigravity",
   trae: "Trae",
 };
 
