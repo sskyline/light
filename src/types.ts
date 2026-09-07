@@ -89,6 +89,7 @@ declare global {
       deleteMemo: (id: string) => void;
       clearEvents: () => void;
       removeSession: (key: string) => void;
+      switchToApp: (agent: AgentId) => void;
       mediaControl: (action: MediaAction) => void;
       startWindowDrag?: () => void;
       endWindowDrag?: () => void;

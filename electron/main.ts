@@ -7,6 +7,7 @@ import { MemoStore, type Memo } from "./memos";
 import { SystemStore, type SystemState } from "./system";
 import { WinBridge, type MediaAction } from "./winbridge";
 import { formatInstallHooksResult, installHooks } from "./hookInstaller";
+import { isSwitchTarget, switchToApp } from "./appSwitcher";
 
 interface HotZone {
   x: number;
@@ -578,6 +579,9 @@ function wireIpc(): void {
   });
   ipcMain.on("light:remove-session", (_evt, key: string) => {
     if (typeof key === "string") store.removeSession(key);
+  });
+  ipcMain.on("light:switch-app", (_evt, agent: unknown) => {
+    if (isSwitchTarget(agent)) switchToApp(agent);
   });
   ipcMain.on("light:quit", () => app.quit());
 

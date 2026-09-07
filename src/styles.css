@@ -708,6 +708,32 @@ body,
   color: rgba(248, 113, 113, 0.95);
 }
 
+.launcher-row {
+  display: flex;
+  gap: 6px;
+}
+.launch-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 0;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.launch-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.95);
+}
+.launch-btn:active {
+  transform: translateY(0.5px);
+}
+
 .divider {
   height: 1px;
   background: var(--hairline);
