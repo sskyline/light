@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 产品版本 | 1.0.5 |
+| 产品版本 | 1.0.6 |
 | 文档状态 | 当前实现基线 |
 | 更新日期 | 2026-09-07 |
 | 支持对象 | Claude Code、Codex CLI、Antigravity；协议层兼容 Trae |
@@ -84,7 +84,7 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 
 ## 5. 功能范围
 
-| 模块 | 1.0.5 状态 | 说明 |
+| 模块 | 1.0.6 状态 | 说明 |
 |---|---|---|
 | 五态状态胶囊 | 已实现 | idle / working / waiting / done / error |
 | Claude Code Hooks | 已实现 | 包含会话、任务、工具、审批、完成事件 |
@@ -95,6 +95,7 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 | 事件流与详情 | 已实现 | 每会话缓存 30 条，面板聚合显示 14 条 |
 | 拖动、位置记忆与多屏 | 已实现 | 托盘也可选择目标显示器 |
 | 本地备忘录 | 已实现 | 最多 50 条，每条最多 200 字 |
+| 应用一键切换 | 已实现 | 展开面板一键打开/激活 Antigravity、Codex、Claude 桌面应用；仅 macOS |
 | Windows 媒体控制 | 已实现 | 基于 SMTC；其他平台不提供 |
 | macOS DMG | 已实现 | 默认未签名、未公证 |
 | Windows 安装器 | 已实现 | staging + Inno Setup 流程 |
