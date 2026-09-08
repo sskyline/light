@@ -2,7 +2,7 @@
 
 Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Codex CLI 与 Antigravity 的生命周期 Hooks，实时显示 AI 会话的工作、完成和出错状态；Claude Code 与 Codex 还支持等待审批状态。
 
-当前版本：`1.0.6`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
+当前版本：`1.0.7`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
 
 ## 能做什么
 

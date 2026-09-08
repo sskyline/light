@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
-import type { SessionState, AgentId, LightEvent, Memo, SystemState } from "../types";
+import type { SessionState, AgentId, LightEvent, Memo, PresenceState, SystemState } from "../types";
 import { MediaFull } from "./MediaCard";
 
 const AGENT_LABEL: Record<AgentId, string> = {
@@ -32,6 +32,7 @@ interface Props {
   sessions: SessionState[];
   memos: Memo[];
   system: SystemState;
+  presence: PresenceState | null;
   onClose?: () => void;
 }
 
@@ -79,9 +80,12 @@ function statusLine(a: SessionState): string {
   }
 }
 
-export function ExpandPanel({ sessions, memos, system, onClose }: Props) {
+export function ExpandPanel({ sessions, memos, system, presence, onClose }: Props) {
   const [draft, setDraft] = useState("");
   const [expandedEventKey, setExpandedEventKey] = useState<string | null>(null);
+
+  // 探测不可用(非 macOS)或缺键时视为已安装,保持按钮可见;一个都没装就整段不渲染。
+  const launchable = LAUNCH_TARGETS.filter(({ agent }) => presence?.[agent]?.installed !== false);
 
   const allEvents = sessions
     .flatMap((s) => s.recent.map((e) => ({ ...e, _key: s.key, _agent: s.agent })))
@@ -108,24 +112,37 @@ export function ExpandPanel({ sessions, memos, system, onClose }: Props) {
     >
       <span className="glass-sheen" aria-hidden="true" />
 
-      <motion.div className="section" variants={ITEM}>
-        <div className="launcher-row">
-          {LAUNCH_TARGETS.map(({ agent, label }) => (
-            <button
-              key={agent}
-              className="launch-btn"
-              type="button"
-              title={`打开或切换到 ${label}`}
-              onClick={() => {
-                window.light?.switchToApp(agent);
-                onClose?.();
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </motion.div>
+      {launchable.length > 0 && (
+        <motion.div className="section" variants={ITEM}>
+          <div className="launcher-row">
+            <AnimatePresence initial={false} mode="popLayout">
+              {launchable.map(({ agent, label }) => {
+                const running = presence?.[agent]?.running === true;
+                return (
+                  <motion.button
+                    key={agent}
+                    layout
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.92 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
+                    className="launch-btn"
+                    type="button"
+                    title={running ? `切换到 ${label}` : `打开 ${label}`}
+                    onClick={() => {
+                      window.light?.switchToApp(agent);
+                      onClose?.();
+                    }}
+                  >
+                    <span>{label}</span>
+                    <span className={`launch-dot ${running ? "on" : ""}`} aria-hidden="true" />
+                  </motion.button>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        </motion.div>
+      )}
 
       <motion.div className="section" variants={ITEM}>
         <div className="section-head">

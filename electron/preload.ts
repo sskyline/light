@@ -28,6 +28,11 @@ contextBridge.exposeInMainWorld("light", {
     ipcRenderer.on("light:system", listener);
     return () => ipcRenderer.off("light:system", listener);
   },
+  onPresence: (cb: (state: unknown) => void) => {
+    const listener = (_: unknown, state: unknown) => cb(state);
+    ipcRenderer.on("light:presence", listener);
+    return () => ipcRenderer.off("light:presence", listener);
+  },
   onBlur: (cb: () => void) => {
     const listener = () => cb();
     ipcRenderer.on("light:blur", listener);
@@ -41,12 +46,14 @@ contextBridge.exposeInMainWorld("light", {
   getState: () => ipcRenderer.invoke("light:get-state"),
   getMemos: () => ipcRenderer.invoke("light:get-memos"),
   getSystem: () => ipcRenderer.invoke("light:get-system"),
+  getPresence: () => ipcRenderer.invoke("light:get-presence"),
   addMemo: (text: string) => ipcRenderer.send("light:add-memo", text),
   toggleMemo: (id: string) => ipcRenderer.send("light:toggle-memo", id),
   deleteMemo: (id: string) => ipcRenderer.send("light:delete-memo", id),
   clearEvents: () => ipcRenderer.send("light:clear-events"),
   removeSession: (key: string) => ipcRenderer.send("light:remove-session", key),
   switchToApp: (agent: string) => ipcRenderer.send("light:switch-app", agent),
+  panelOpened: () => ipcRenderer.send("light:panel-opened"),
   mediaControl: (action: string) => ipcRenderer.send("light:media-control", action),
   startWindowDrag: () => ipcRenderer.send("light:start-window-drag"),
   endWindowDrag: () => ipcRenderer.send("light:end-window-drag"),
