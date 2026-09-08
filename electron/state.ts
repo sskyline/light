@@ -50,6 +50,7 @@ const STALE_WORKING_MS = 4 * 60_000;
 const STALE_WAITING_MS = 60_000;
 const IDLE_GC_MS = 30 * 60_000; // drop idle sessions after 30 min of no activity
 const RECENT_CAP = 30;
+export const STATE_PUBLISH_INTERVAL_MS = 750;
 
 const VALID_AGENTS = new Set<AgentId>(["claude-code", "codex", "antigravity", "trae"]);
 const VALID_TYPES = new Set<EventType>([
@@ -94,6 +95,25 @@ export class StateStore extends EventEmitter {
   private timers = new Map<string, NodeJS.Timeout>();
   private gcTimers = new Map<string, NodeJS.Timeout>();
   private seqCounters = new Map<AgentId, number>();
+  private publishTimer?: NodeJS.Timeout;
+  private lastPublishedAt?: number;
+
+  // Ingest every event immediately, but only serialize/push the latest snapshot
+  // once per interval during tool bursts. This is a throttle, not a debounce:
+  // continuous output must keep updating the UI, and the final update must land.
+  private publishState(immediate = false): void {
+    const remaining = this.lastPublishedAt === undefined
+      ? 0
+      : STATE_PUBLISH_INTERVAL_MS - (Date.now() - this.lastPublishedAt);
+    if (immediate || remaining <= 0) {
+      if (this.publishTimer) clearTimeout(this.publishTimer);
+      this.publishTimer = undefined;
+      this.lastPublishedAt = Date.now();
+      this.emit("state", this.getState());
+    } else if (!this.publishTimer) {
+      this.publishTimer = setTimeout(() => this.publishState(true), remaining);
+    }
+  }
 
   private nextSeq(agent: AgentId): number {
     const n = (this.seqCounters.get(agent) ?? 0) + 1;
@@ -130,7 +150,7 @@ export class StateStore extends EventEmitter {
       this.timers.delete(key);
       this.gcTimers.delete(key);
       this.sessions.delete(key);
-      this.emit("state", this.getState());
+      this.publishState(true);
       this.emit("event", evt);
       return evt;
     }
@@ -195,7 +215,10 @@ export class StateStore extends EventEmitter {
     this.sessions.set(key, next);
     this.scheduleAutoReset(key);
     this.scheduleGc(key);
-    this.emit("state", this.getState());
+    this.publishState(
+      evt.type === "approval_request" || evt.type === "error" ||
+      evt.type === "stop" || evt.type === "user_prompt",
+    );
     this.emit("event", evt);
     return evt;
   }
@@ -204,7 +227,7 @@ export class StateStore extends EventEmitter {
     for (const s of this.sessions.values()) {
       s.recent = [];
     }
-    this.emit("state", this.getState());
+    this.publishState(true);
   }
 
   // Manually drop a single session from the island (user housekeeping).
@@ -218,7 +241,7 @@ export class StateStore extends EventEmitter {
     this.timers.delete(key);
     this.gcTimers.delete(key);
     if (this.sessions.delete(key)) {
-      this.emit("state", this.getState());
+      this.publishState(true);
     }
   }
 
@@ -228,7 +251,7 @@ export class StateStore extends EventEmitter {
     this.timers.clear();
     this.gcTimers.clear();
     this.sessions.clear();
-    this.emit("state", this.getState());
+    this.publishState(true);
   }
 
   private scheduleAutoReset(key: string): void {
@@ -259,7 +282,7 @@ export class StateStore extends EventEmitter {
         c.status = "idle";
         c.startedAt = undefined;
         c.currentTool = undefined;
-        this.emit("state", this.getState());
+        this.publishState(true);
       }
     }, delay);
     this.timers.set(key, timer);
@@ -275,7 +298,7 @@ export class StateStore extends EventEmitter {
         this.sessions.delete(key);
         this.gcTimers.delete(key);
         this.timers.delete(key);
-        this.emit("state", this.getState());
+        this.publishState(true);
       }
     }, IDLE_GC_MS);
     this.gcTimers.set(key, t);
