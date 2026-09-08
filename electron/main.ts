@@ -8,6 +8,7 @@ import { SystemStore, type SystemState } from "./system";
 import { WinBridge, type MediaAction } from "./winbridge";
 import { formatInstallHooksResult, installHooks } from "./hookInstaller";
 import { isSwitchTarget, switchToApp } from "./appSwitcher";
+import { PresenceWatcher, type PresenceState } from "./appPresence";
 
 interface HotZone {
   x: number;
@@ -55,6 +56,12 @@ let lastHoverSent: boolean | null = null;
 
 const store = new StateStore();
 const systemStore = new SystemStore();
+// 安装态/运行态探测只在 macOS 启用;其他平台 getPresence 返回 null,UI 保持原样。
+const presenceWatcher = process.platform === "darwin"
+  ? new PresenceWatcher({
+      onChange: (state: PresenceState) => mainWindow?.webContents.send("light:presence", state),
+    })
+  : null;
 let memoStore: MemoStore | null = null;
 let winBridge: WinBridge | null = null;
 let currentDisplayId: number | null = null;
@@ -549,6 +556,7 @@ function wireIpc(): void {
   ipcMain.handle("light:get-state", (): AppState => store.getState());
   ipcMain.handle("light:get-memos", (): Memo[] => memoStore?.list() ?? []);
   ipcMain.handle("light:get-system", (): SystemState => systemStore.getState());
+  ipcMain.handle("light:get-presence", (): PresenceState | null => presenceWatcher?.getState() ?? null);
   ipcMain.on("light:media-control", (_evt, action: MediaAction) => {
     winBridge?.control(action);
   });
@@ -581,8 +589,11 @@ function wireIpc(): void {
     if (typeof key === "string") store.removeSession(key);
   });
   ipcMain.on("light:switch-app", (_evt, agent: unknown) => {
-    if (isSwitchTarget(agent)) switchToApp(agent);
+    if (!isSwitchTarget(agent)) return;
+    presenceWatcher?.markRunning(agent);
+    switchToApp(agent, undefined, undefined, () => presenceWatcher?.markNotInstalled(agent));
   });
+  ipcMain.on("light:panel-opened", () => presenceWatcher?.probeNow());
   ipcMain.on("light:quit", () => app.quit());
 
   store.on("state", (state: AppState) => {
@@ -608,6 +619,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   wireIpc();
+  presenceWatcher?.start();
 
   // Windows bridge: SMTC media + notification listener. Dev: <root>/bridge.
   const bridgeDir = path.join(__dirname, "..", "bridge");
@@ -637,6 +649,7 @@ app.on("before-quit", () => {
   }
   saveWindowPositionNow();
   winBridge?.stop();
+  presenceWatcher?.stop();
 });
 
 app.on("window-all-closed", (e: Electron.Event) => {

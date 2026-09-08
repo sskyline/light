@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 export type SwitchTarget = "antigravity" | "codex" | "claude-code";
 
 // codex 的显示名是 ChatGPT.app，bundle id 表明它就是 Codex 桌面版。
-const BUNDLE_IDS: Record<SwitchTarget, string> = {
+export const BUNDLE_IDS: Record<SwitchTarget, string> = {
   antigravity: "com.google.antigravity",
   codex: "com.openai.codex",
   "claude-code": "com.anthropic.claudefordesktop",
@@ -21,9 +21,13 @@ export function switchToApp(
   target: SwitchTarget,
   exec: ExecFn = defaultExec,
   log: (...args: unknown[]) => void = console.error,
+  onError?: (err: Error) => void,
 ): void {
   const bundleId = BUNDLE_IDS[target];
   exec("open", ["-b", bundleId], (err) => {
-    if (err) log(`[appSwitcher] failed to activate ${target} (${bundleId})`, err.message);
+    if (err) {
+      log(`[appSwitcher] failed to activate ${target} (${bundleId})`, err.message);
+      onError?.(err);
+    }
   });
 }

@@ -15,6 +15,7 @@ import type {
   LightEvent,
   Memo,
   MediaAction,
+  PresenceState,
   SessionState,
   SystemState,
 } from "./types";
@@ -144,6 +145,15 @@ export function installMockBridge(): void {
   const systemListeners = new Set<(s: SystemState) => void>();
   const memoListeners = new Set<(m: Memo[]) => void>();
   const eventListeners = new Set<(e: LightEvent) => void>();
+  const presenceListeners = new Set<(p: PresenceState | null) => void>();
+
+  // ?noinstall=codex,antigravity 可以把对应 app 模拟成未安装(按钮应隐藏)。
+  const noInstall = new Set(param("noinstall", "").split(",").filter(Boolean));
+  const presence: PresenceState = {
+    antigravity: { installed: !noInstall.has("antigravity"), running: false },
+    codex: { installed: !noInstall.has("codex"), running: true },
+    "claude-code": { installed: !noInstall.has("claude-code"), running: true },
+  };
 
   let memos: Memo[] = [
     { id: "m1", text: "把玻璃质感在亮色壁纸下调好", completed: false, createdAt: iso(-60000) },
@@ -169,6 +179,7 @@ export function installMockBridge(): void {
     stateListeners.forEach((cb) => cb(s));
   };
   const emitMemos = () => memoListeners.forEach((cb) => cb([...memos]));
+  const emitPresence = () => presenceListeners.forEach((cb) => cb({ ...presence }));
 
   // Drive the clock so the working timer climbs and `cycle` mode advances.
   window.setInterval(() => {
@@ -193,10 +204,15 @@ export function installMockBridge(): void {
       systemListeners.add(cb);
       return () => systemListeners.delete(cb);
     },
+    onPresence: (cb) => {
+      presenceListeners.add(cb);
+      return () => presenceListeners.delete(cb);
+    },
     onBlur: () => () => {},
     getState: async () => buildState(),
     getMemos: async () => [...memos],
     getSystem: async () => media,
+    getPresence: async () => ({ ...presence }),
     addMemo: (text: string) => {
       memos = [
         ...memos,
@@ -220,7 +236,10 @@ export function installMockBridge(): void {
     removeSession: () => {},
     switchToApp: (agent) => {
       console.info("[mock] switchToApp", agent);
+      presence[agent] = { installed: true, running: true };
+      emitPresence();
     },
+    panelOpened: () => {},
     mediaControl: (action: MediaAction) => {
       if (media.media && (action === "playpause" || action === "play" || action === "pause")) {
         media.media = { ...media.media, playing: !media.media.playing };

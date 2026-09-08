@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { AgentId, AgentStatus, HotZone, Memo, SessionState, SystemState } from "../types";
+import type { AgentId, AgentStatus, HotZone, Memo, PresenceState, SessionState, SystemState } from "../types";
 import { AgentPill } from "./AgentPill";
 import { ExpandPanel } from "./ExpandPanel";
 import { MediaCompact } from "./MediaCard";
@@ -10,6 +10,7 @@ interface Props {
   sessions: SessionState[];
   memos: Memo[];
   system: SystemState;
+  presence: PresenceState | null;
 }
 
 const AGENT_ORDER: AgentId[] = ["claude-code", "codex", "antigravity", "trae"];
@@ -43,7 +44,7 @@ function overallStatus(sessions: SessionState[]): AgentStatus {
   return "idle";
 }
 
-export function Island({ sessions, memos, system }: Props) {
+export function Island({ sessions, memos, system, presence }: Props) {
   const [hover, setHover] = useState(false);
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -152,6 +153,8 @@ export function Island({ sessions, memos, system }: Props) {
       suppressNextClickRef.current = false;
       return;
     }
+    // 面板即将展开:让主进程补一次即时探测,徽标不依赖 15s 轮询的空档。
+    if (!open) window.light?.panelOpened?.();
     setOpen((v) => !v);
   };
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -290,6 +293,7 @@ export function Island({ sessions, memos, system }: Props) {
               sessions={sessions.filter((s) => s.status !== "idle" || s.recent.length > 0)}
               memos={memos}
               system={system}
+              presence={presence}
               onClose={() => setOpen(false)}
             />
           </div>

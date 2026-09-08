@@ -60,6 +60,15 @@ export interface SystemState {
   bridgeReady: boolean;
 }
 
+export interface AppPresence {
+  installed: boolean;
+  running: boolean;
+}
+
+// 键只会出现 antigravity/codex/claude-code;null 表示平台不支持探测(非 macOS),
+// 此时 UI 视为全部已安装、不显示运行徽标。
+export type PresenceState = Partial<Record<AgentId, AppPresence>>;
+
 export type MediaAction = "next" | "prev" | "playpause" | "play" | "pause";
 
 export interface HotZone {
@@ -76,6 +85,7 @@ declare global {
       onState: (cb: (state: AppState) => void) => () => void;
       onMemos: (cb: (memos: Memo[]) => void) => () => void;
       onSystem: (cb: (state: SystemState) => void) => () => void;
+      onPresence: (cb: (state: PresenceState | null) => void) => () => void;
       onBlur: (cb: () => void) => () => void;
       // Cursor-over-hotzone signal from the main process. Optional: only the
       // real Electron bridge provides it; the browser dev mock relies on DOM
@@ -84,12 +94,14 @@ declare global {
       getState: () => Promise<AppState>;
       getMemos: () => Promise<Memo[]>;
       getSystem: () => Promise<SystemState>;
+      getPresence: () => Promise<PresenceState | null>;
       addMemo: (text: string) => void;
       toggleMemo: (id: string) => void;
       deleteMemo: (id: string) => void;
       clearEvents: () => void;
       removeSession: (key: string) => void;
       switchToApp: (agent: AgentId) => void;
+      panelOpened: () => void;
       mediaControl: (action: MediaAction) => void;
       startWindowDrag?: () => void;
       endWindowDrag?: () => void;

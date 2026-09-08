@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AppState, LightEvent, Memo, SystemState } from "../types";
+import type { AppState, LightEvent, Memo, PresenceState, SystemState } from "../types";
 
 const EMPTY_STATE: AppState = { sessions: [] };
 const EMPTY_SYSTEM: SystemState = {
@@ -73,5 +73,23 @@ export function useSystem(): SystemState {
     };
   }, []);
   return sys;
+}
+
+export function usePresence(): PresenceState | null {
+  const [presence, setPresence] = useState<PresenceState | null>(null);
+  useEffect(() => {
+    const bridge = getBridge();
+    if (!bridge) return;
+    let cancelled = false;
+    bridge.getPresence().then((s) => {
+      if (!cancelled) setPresence(s);
+    });
+    const off = bridge.onPresence((s) => setPresence(s as PresenceState | null));
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
+  return presence;
 }
 
