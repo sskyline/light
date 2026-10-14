@@ -8,11 +8,11 @@
 ;    2) Open this file in Inno Setup 6 and click "Compile" (or:
 ;       iscc installer\light.iss)
 ;
-;  Output:  ..\release\Light-Setup-1.0.7.exe   (per-user, no admin needed)
+;  Output:  ..\release\Light-Setup-1.0.8.exe   (per-user, no admin needed)
 ; ============================================================================
 
 #define MyAppName "Light"
-#define MyAppVersion "1.0.7"
+#define MyAppVersion "1.0.8"
 #define MyAppPublisher "Light"
 #define MyAppExeName "Light.exe"
 
