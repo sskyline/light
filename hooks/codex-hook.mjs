@@ -7,6 +7,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createHash } from "node:crypto";
 
 const PORT = Number(process.env.LIGHT_PORT || 51789);
 const HOST = "127.0.0.1";
@@ -14,6 +15,30 @@ const HOOK_EVENT = process.argv[2];
 const DEBUG_RAW = process.env.LIGHT_HOOK_DEBUG === "1";
 const LOG_PATH = path.join(os.tmpdir(), "light-codex-hook.log");
 const IGNORED_EVENTS = new Set(["SessionStart", "session_start", "Enter", "enter"]);
+const SUGGESTION_PREFIX = "This is an app-generated request for a suggested next user message. The user did not write this message.";
+
+// Hooks run in separate processes. Remember the ignored turn so its Stop (or
+// tool events) cannot create a phantom session. A real prompt resets the marker.
+function ignoreSuggestionTurn(type, parsed, sessionId) {
+  const isSuggestion = type === "user_prompt" &&
+    (pickPrompt(parsed) || "").trimStart().startsWith(SUGGESTION_PREFIX);
+  if (!sessionId) return isSuggestion;
+  const key = createHash("sha256").update(sessionId).digest("hex");
+  const marker = path.join(os.tmpdir(), `light-codex-suggestion-${key}`);
+  try {
+    if (type === "user_prompt") {
+      if (isSuggestion) fs.writeFileSync(marker, "", { mode: 0o600 });
+      else fs.rmSync(marker, { force: true });
+      return isSuggestion;
+    }
+    const ignored = fs.existsSync(marker);
+    if (type === "stop" || type === "session_end") fs.rmSync(marker, { force: true });
+    return ignored;
+  } catch (error) {
+    logLine(`suggestion_filter_error=${error instanceof Error ? error.message : String(error)}`);
+    return isSuggestion;
+  }
+}
 
 const EVENT_MAP = new Map([
   ["SessionEnd", "session_end"],
@@ -228,11 +253,17 @@ function post(payload) {
     logLine(`json_parse_error=${error instanceof Error ? error.message : String(error)}`);
   }
 
+  const sessionId = pickSessionId(parsed);
+  if (ignoreSuggestionTurn(type, parsed, sessionId)) {
+    logLine(`ignored event=${HOOK_EVENT} reason=app_generated_suggestion`);
+    process.exit(0);
+  }
+
   const tool = pickTool(parsed);
   const payload = {
     agent: "codex",
     type,
-    sessionId: pickSessionId(parsed),
+    sessionId,
     tool: truncate(tool, 80),
     message: buildMessage(type, HOOK_EVENT, parsed, tool),
     timestamp: new Date().toISOString(),

@@ -104,6 +104,10 @@ Light 当前的 Codex 默认配置以 turn 事件为主，只进入一个空 CLI
 Light 会话；会话从 `UserPromptSubmit` 开始计时，本轮结束后短暂展示 done/error，
 然后回到“空闲”。
 
+适配器会忽略以 `This is an app-generated request for a suggested next user message.
+The user did not write this message.` 开头的输入框建议后台请求，以及同一轮次的后续工具
+和结束事件，避免生成虚假会话。正常用户消息（包括在正文中引用这段说明）照常转发。
+
 `codex-cli 0.146.0` 已能触发 `SessionStart`，并声明了 `SessionEnd` 事件，但 Light 当前
 尚未把它们加入默认安装配置。适配器会忽略 `SessionStart`，`SessionEnd` 的实际结束语义
 仍需验证。因此这里不把它们作为稳定的进程生命周期能力承诺。
