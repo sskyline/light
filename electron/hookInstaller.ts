@@ -24,6 +24,7 @@ type HookSpec = {
   arg: string;
   matcher?: string;
   statusMessage?: string;
+  timeout?: number;
 };
 
 export type InstallHooksResult = {
@@ -67,6 +68,7 @@ const CODEX_SPECS: HookSpec[] = [
   { event: "PermissionRequest", arg: "PermissionRequest", matcher: "*", statusMessage: "Light: Codex approval requested" },
   { event: "PostToolUse", arg: "PostToolUse", matcher: "*", statusMessage: "Light: Codex tool finished" },
   { event: "Stop", arg: "Stop", statusMessage: "Light: Codex turn finished" },
+  { event: "Interrupt", arg: "Interrupt", statusMessage: "Light: Codex turn interrupted", timeout: 3 },
 ];
 
 // PreToolUse participates in permission decisions in Antigravity. A status
@@ -254,6 +256,7 @@ function appendHook(
         type: "command",
         command,
         ...(spec.statusMessage ? { statusMessage: spec.statusMessage } : {}),
+        ...(spec.timeout != null ? { timeout: spec.timeout } : {}),
       },
     ],
   };

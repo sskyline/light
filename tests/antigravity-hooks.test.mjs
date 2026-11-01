@@ -194,7 +194,7 @@ test("packaged app migration updates generated paths for all agents and preserve
   const before = new Map([claudePath, codexPath, configPath].map((p) => [p, fs.readFileSync(p, "utf8")]));
   const installed = { ...options, execPath: "/Applications/Light.app/Contents/MacOS/Light" };
   const result = installHooks(installed);
-  for (const [name, count] of [["claude", 7], ["codex", 5], ["antigravity", 3]]) {
+  for (const [name, count] of [["claude", 7], ["codex", 6], ["antigravity", 3]]) {
     const target = result[name];
     assert.equal(target.error, undefined);
     assert.equal(target.added, 0);

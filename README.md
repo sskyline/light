@@ -2,7 +2,7 @@
 
 Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Codex CLI 与 Antigravity 的生命周期 Hooks，实时显示 AI 会话的工作、完成和出错状态；Claude Code 与 Codex 还支持等待审批状态。
 
-当前版本：`1.0.8`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
+当前版本：`1.0.9`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
 
 ## 能做什么
 
@@ -89,6 +89,8 @@ macOS 安装版使用 Electron 自身执行 Hook 脚本，因此不要求另外�
 
 Claude Code 使用 `SessionStart` 与 `SessionEnd` 管理会话。Light 当前的 Codex 默认配置从 `UserPromptSubmit` 开始上报，尚未接入 Codex 的 Session 生命周期事件；如需进程级检测，可使用 `hooks/codex-wrap.*`。
 
+Codex 通过 `Interrupt` 接收当前轮次的取消事件（如按 Esc），立即回到空闲并清除计时。已有安装需在新版 Light 中再点一次“接入 Hooks...”，重启 Codex 并信任新增 Hook。
+
 Antigravity 使用 `PreInvocation`、`PostToolUse` 和 `Stop`，支持任务计时、工具完成记录及完成/出错状态。当前不检测等待审批、执行中的工具或窗口关闭，也不采集 prompt。安装不会配置 VPN 或更改启动方式，详见 [Antigravity 接入说明](docs/hooks.md#3-antigravity)。
 
 ## 状态机
@@ -102,6 +104,7 @@ Antigravity 使用 `PreInvocation`、`PostToolUse` 和 `Stop`，支持任务计�
 | `approval_request` | 转为 `waiting`，显示待审批工具 |
 | `tool_result` | 转为 `working`，清除当前工具 |
 | `stop` | 转为 `done` |
+| `interrupt` | 立即转为 `idle`，清空当前工具和任务计时 |
 | `error` | 转为 `error` |
 | `notification` | 不改变状态，只写入事件流 |
 
@@ -144,7 +147,7 @@ curl -X POST http://127.0.0.1:51789/event \
 ```json
 {
   "agent": "claude-code | codex | antigravity | trae",
-  "type": "session_start | session_end | user_prompt | tool_use | approval_request | tool_result | stop | notification | error",
+  "type": "session_start | session_end | user_prompt | tool_use | approval_request | tool_result | stop | interrupt | notification | error",
   "sessionId": "可选；区分同一 agent 的并发会话",
   "tool": "可选；工具名",
   "message": "可选；任务或事件摘要",

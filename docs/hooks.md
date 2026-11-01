@@ -54,7 +54,7 @@ node 也认，例如 `C:/Users/你的用户名/light`）：
 - Light 没启动时脚本静默退出，不会阻塞 Claude 的 hook 流水线。
 - macOS / Linux 也可以直接使用上面的 `node .../claude-hook.mjs`；如需 shell 入口，可使用 `claude-hook.sh`（先 `chmod +x`）。
 
-## 2. Codex CLI
+## 2. Codex
 
 Codex CLI 现在支持官方 lifecycle hooks。推荐用官方 hooks 接入，这样 Light 能在
 **每一轮 Codex turn 结束**时收到 `Stop`，不会等到整个 Codex CLI 进程退出才变回
@@ -88,7 +88,7 @@ C:/Users/你的用户名/light
 ```
 
 确认 `UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、
-`Stop` 已加载，并信任这些 hook。
+`Stop`、`Interrupt` 已加载，并信任这些 hook。
 
 这些事件会映射成 Light 事件：
 
@@ -99,6 +99,13 @@ C:/Users/你的用户名/light
 | `PermissionRequest` | `approval_request` | 切到 waiting，1 分钟无新事件则自动转 idle |
 | `PostToolUse` | `tool_result` | 工具完成，清掉 waiting 并回到 working |
 | `Stop` | `stop` | 本轮完成，显示 done |
+| `Interrupt` | `interrupt` | 用户中断当前轮次，立即回到 idle，清除工具和计时 |
+
+按 Esc 取消正在运行的 Codex 轮次时，通过 `Interrupt` 上报取消事件；会话保留，
+下一次真实提问重新开始计时。该 hook 只在主会话的活动轮次被中断时运行，空闲时按 Esc
+不会触发，也不用于子代理。脚本静默退出，不阻止取消或重新启动任务，超时配置为 3 秒。
+已有安装需要用新版 Light 再点一次“接入 Hooks...”，重启 Codex 并审核、信任新增 hook。
+参考：[OpenAI 官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks#interrupt)。
 
 Light 当前的 Codex 默认配置以 turn 事件为主，只进入一个空 CLI 时通常不会创建
 Light 会话；会话从 `UserPromptSubmit` 开始计时，本轮结束后短暂展示 done/error，

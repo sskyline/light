@@ -10,6 +10,7 @@ export type EventType =
   | "approval_request"
   | "tool_result"
   | "stop"
+  | "interrupt"
   | "notification"
   | "error";
 

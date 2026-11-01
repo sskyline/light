@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Forwards a Codex lifecycle hook invocation to the Light desktop app.
 // Usage: node codex-hook.mjs <CodexHookEvent>
-// Example events: UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Stop
+// Example events: UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Stop, Interrupt
 
 import http from "node:http";
 import fs from "node:fs";
@@ -32,7 +32,7 @@ function ignoreSuggestionTurn(type, parsed, sessionId) {
       return isSuggestion;
     }
     const ignored = fs.existsSync(marker);
-    if (type === "stop" || type === "session_end") fs.rmSync(marker, { force: true });
+    if (type === "stop" || type === "interrupt" || type === "session_end") fs.rmSync(marker, { force: true });
     return ignored;
   } catch (error) {
     logLine(`suggestion_filter_error=${error instanceof Error ? error.message : String(error)}`);
@@ -59,6 +59,8 @@ const EVENT_MAP = new Map([
   ["SubagentStop", "notification"],
   ["Stop", "stop"],
   ["stop", "stop"],
+  ["Interrupt", "interrupt"],
+  ["interrupt", "interrupt"],
   ["error", "error"],
   ["notification", "notification"],
 ]);
@@ -163,6 +165,7 @@ function pickCommand(parsed) {
 }
 
 function buildMessage(type, hookEvent, parsed, tool) {
+  if (type === "interrupt") return "用户已取消本轮任务";
   if (type === "user_prompt") return truncate(pickPrompt(parsed), 400);
   if (type === "approval_request") {
     const command = pickCommand(parsed);

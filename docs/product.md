@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 产品版本 | 1.0.8 |
+| 产品版本 | 1.0.9 |
 | 文档状态 | 当前实现基线 |
-| 更新日期 | 2026-10-14 |
+| 更新日期 | 2026-11-01 |
 | 支持对象 | Claude Code、Codex CLI、Antigravity；协议层兼容 Trae |
 | 核心原则 | 一眼可见、安静常驻、本地优先 |
 
@@ -84,11 +84,11 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 
 ## 5. 功能范围
 
-| 模块 | 1.0.8 状态 | 说明 |
+| 模块 | 1.0.9 状态 | 说明 |
 |---|---|---|
 | 五态状态胶囊 | 已实现 | idle / working / waiting / done / error |
 | Claude Code Hooks | 已实现 | 包含会话、任务、工具、审批、完成事件 |
-| Codex 官方 Hooks | 已实现 | turn 级任务、工具、审批和完成事件 |
+| Codex 官方 Hooks | 已实现 | turn 级任务、工具、审批、完成和用户取消事件 |
 | Antigravity Hooks | 已实现 | 任务计时、工具完成记录、完成/出错；不接管工具权限 |
 | 托盘一键安装 Hooks | 部分实现 | macOS 安装版可用；Windows staging 资源路径待修复 |
 | 多 Agent / 多会话 | 已实现 | 独立状态、聚合展示、手动移除 |
@@ -137,6 +137,7 @@ Light 支持五种会话状态：
 | `approval_request` | 转为 `waiting`，记录待审批工具；缺少开始时间时补记 |
 | `tool_result` | 转为 `working`，清空当前工具，表示本轮仍未结束 |
 | `stop` | 转为 `done`，清空当前工具 |
+| `interrupt` | 用户取消本轮任务，立即转为 `idle`，清空当前工具和任务计时 |
 | `error` | 转为 `error`，清空当前工具 |
 | `notification` | 保持当前状态，只追加事件 |
 
@@ -195,6 +196,8 @@ Stop              -> stop
 ```
 
 Light 当前的 Codex 默认配置从 `UserPromptSubmit` 创建会话，尚未接入 Codex Session 生命周期事件；如需进程级检测，使用 `codex-wrap` 辅助脚本。
+
+Codex 的 `Interrupt` 映射为 Light `interrupt`：用户中断活动轮次（如按 Esc）后立即回到空闲，保留会话及任务摘要，下次提问重新计时。该 hook 不在空闲会话或子代理上触发，超时为 3 秒。
 
 ### 6.6 本地备忘录
 
@@ -276,7 +279,7 @@ Local memo JSON <─────────────────────
 ```json
 {
   "agent": "claude-code | codex | antigravity | trae",
-  "type": "session_start | session_end | user_prompt | tool_use | approval_request | tool_result | stop | notification | error",
+  "type": "session_start | session_end | user_prompt | tool_use | approval_request | tool_result | stop | interrupt | notification | error",
   "sessionId": "optional string",
   "tool": "optional string",
   "message": "optional string",

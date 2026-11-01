@@ -10,6 +10,7 @@ export type EventType =
   | "approval_request"
   | "tool_result"
   | "stop"
+  | "interrupt"
   | "notification"
   | "error";
 
@@ -61,6 +62,7 @@ const VALID_TYPES = new Set<EventType>([
   "approval_request",
   "tool_result",
   "stop",
+  "interrupt",
   "notification",
   "error",
 ]);
@@ -204,6 +206,11 @@ export class StateStore extends EventEmitter {
         next.status = "done";
         next.currentTool = undefined;
         break;
+      case "interrupt":
+        next.status = "idle";
+        next.currentTool = undefined;
+        next.startedAt = undefined;
+        break;
       case "error":
         next.status = "error";
         next.currentTool = undefined;
@@ -217,7 +224,7 @@ export class StateStore extends EventEmitter {
     this.scheduleGc(key);
     this.publishState(
       evt.type === "approval_request" || evt.type === "error" ||
-      evt.type === "stop" || evt.type === "user_prompt",
+      evt.type === "stop" || evt.type === "interrupt" || evt.type === "user_prompt",
     );
     this.emit("event", evt);
     return evt;

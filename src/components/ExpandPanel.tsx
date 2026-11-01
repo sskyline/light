@@ -24,6 +24,7 @@ const EVENT_TAG: Record<LightEvent["type"], string> = {
   approval_request: "approve",
   tool_result: "result",
   stop: "stop",
+  interrupt: "cancel",
   notification: "note",
   error: "err",
 };

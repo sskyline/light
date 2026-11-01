@@ -59,6 +59,7 @@ for (const [type, status] of [
   ["approval_request", "waiting"],
   ["error", "error"],
   ["stop", "done"],
+  ["interrupt", "idle"],
   ["user_prompt", "working"],
 ]) {
   test(`${type} flushes immediately and cancels the older pending update`, (t) => {
@@ -92,6 +93,27 @@ test("manual clear and removal take effect immediately during a pending burst", 
   const count = states.length;
   t.mock.timers.tick(INTERVAL);
   assert.equal(states.length, count, "removed sessions must not reappear");
+});
+
+test("interrupt clears task timing and watchdogs without affecting another session", (t) => {
+  const { store, states, ingest } = setup(t);
+  ingest("user_prompt");
+  ingest("approval_request");
+  ingest("user_prompt", "another task", "session-b");
+  ingest("interrupt");
+  const session = () => store.getState().sessions.find((s) => s.sessionId === "session-a");
+  assert.equal(session().status, "idle");
+  assert.equal(session().startedAt, undefined);
+  assert.equal(session().currentTool, undefined);
+  assert.equal(session().lastPrompt, "user_prompt");
+  assert.equal(store.getState().sessions.find((s) => s.sessionId === "session-b").status, "working");
+  const count = states.length;
+  t.mock.timers.tick(60_000);
+  assert.equal(states.length, count, "cancelled approval watchdog must not publish again");
+  ingest("user_prompt", "retry");
+  assert.equal(session().status, "working");
+  assert.equal(session().startedAt, new Date().toISOString());
+  assert.equal(session().lastPrompt, "retry");
 });
 
 test("a shared batch includes every session and preserves the existing history cap", (t) => {

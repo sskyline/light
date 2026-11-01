@@ -47,6 +47,18 @@
         ]
       }
     ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/codex-hook.mjs\" Interrupt",
+            "statusMessage": "Light: Codex turn interrupted",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
