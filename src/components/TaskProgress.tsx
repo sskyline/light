@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { EventType, LightEvent } from "../types";
+import { formatEventTime, selectVisibleProgressEvents } from "../../electron/progressOrder";
 import { activityRows, activityRowLabel, type ActivityRow } from "../toolActivity";
 import { collapseTransition } from "./capsuleMotion";
 
@@ -58,12 +59,15 @@ function isToolEvent(type: EventType): boolean {
   return type === "tool_use" || type === "tool_result" || type === "approval_request";
 }
 
-function EventTime({ timestamp }: { timestamp: string }) {
-  const time = new Date(timestamp);
-  const label = [time.getHours(), time.getMinutes(), time.getSeconds()]
-    .map((part) => String(part).padStart(2, "0"))
-    .join(":");
-  return <time className="evt-time" dateTime={timestamp}>{label}</time>;
+function EventTime({ timestamp, prefix }: { timestamp: string; prefix?: string }) {
+  const label = formatEventTime(timestamp);
+  if (!label) return <span className="evt-time" />;
+  return (
+    <>
+      {prefix}
+      <time className="evt-time" dateTime={timestamp}>{label}</time>
+    </>
+  );
 }
 
 export function TaskProgress({ recent, unread = [], onRead }: {
@@ -72,15 +76,7 @@ export function TaskProgress({ recent, unread = [], onRead }: {
   onRead: (id: number) => void;
 }) {
   const [inspected, setInspected] = useState<LightEvent>();
-  const ordered = recent.filter(event => event.type !== "approval_request").sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  const latestStart = ordered.findIndex((event) => event.type === "user_prompt");
-  const latest = latestStart < 0 ? ordered : ordered.slice(0, latestStart + 1);
-  // Unread reasons may predate this turn or have rolled out of its 30-event history.
-  // Keep the opened reason mounted after its acknowledgement arrives from main.
-  const ids = new Set(latest.map(event => event.approvalId));
-  const pinned = unread.filter(event => !ids.has(event.approvalId));
-  if (inspected && !ids.has(inspected.approvalId) && !pinned.some(e => e.approvalId === inspected.approvalId)) pinned.push(inspected);
-  const visible = [...latest, ...pinned].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const visible = selectVisibleProgressEvents(recent, unread, inspected);
 
   return (
     <div className="session-progress">
@@ -203,7 +199,7 @@ function ActivityLog({ rows }: { rows: ActivityRow[] }) {
                   <div className="tool-original">
                     {(call ? [call, event] : [event]).map(record => (
                       <div key={record.type}>
-                        <div className="tool-source">{EVENT_LABEL[record.type]} · <EventTime timestamp={record.timestamp} />{record.tool && ` · ${record.tool}`}</div>
+                        <div className="tool-source">{EVENT_LABEL[record.type]}<EventTime timestamp={record.timestamp} prefix=" · " />{record.tool && ` · ${record.tool}`}</div>
                         {record.message && record.message !== record.tool && <pre>{record.message}</pre>}
                       </div>
                     ))}

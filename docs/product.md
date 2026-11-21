@@ -4,7 +4,7 @@
 |---|---|
 | 产品版本 | 1.1.0 |
 | 文档状态 | 当前实现基线 |
-| 更新日期 | 2026-11-01 |
+| 更新日期 | 2026-11-21 |
 | 支持对象 | Claude Code、Codex CLI、Antigravity；协议层兼容 Trae |
 | 核心原则 | 一眼可见、安静常驻、本地优先 |
 
@@ -90,7 +90,7 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 | Claude Code Hooks | 已实现 | 包含会话、任务、工具、审批、自动审批失败、完成事件 |
 | Codex 官方 Hooks | 已实现 | turn 级任务、工具、审批、完成、用户取消与本地审核拒绝关联 |
 | Antigravity Hooks | 已实现 | 任务计时、工具完成记录、完成/出错；不接管工具权限 |
-| 一键安装 Hooks | 部分实现 | macOS 安装版可在「连接与诊断」中一键接入；Windows staging 资源路径待修复 |
+| 一键安装 Hooks | 部分实现 | macOS 安装版可在「连接与诊断」中一键接入；Windows 安装版当前使用手动配置 |
 | 多 Agent / 多会话 | 已实现 | 独立状态、聚合展示、手动移除 |
 | 任务进展与详情 | 已实现 | 每会话缓存 30 条事件。默认展开优先会话的最近一轮 |
 | 拖动、位置记忆与多屏 | 已实现 | 托盘也可选择目标显示器 |
@@ -175,8 +175,8 @@ Light 支持六种会话状态：
 
 托盘菜单与展开面板均提供「连接与诊断」入口，面板内支持一键“接入 Hooks”并满足：
 
-- 向 `~/.claude/settings.json` 合并 Claude Code Hooks。
-- 向 `~/.codex/hooks.json` 合并 Codex Hooks。
+- 向 `~/.claude/settings.json`（或 `CLAUDE_CONFIG_DIR/settings.json`）合并 Claude Code Hooks。
+- 向 `~/.codex/hooks.json`（或 `CODEX_HOME/hooks.json`）合并 Codex Hooks。
 - 向 `~/.gemini/config/hooks.json` 合并 Antigravity Hooks。
 - 只追加缺失的 Light Hook，不覆盖其他 Hook。
 - 修改已有配置前创建时间戳备份。
@@ -295,7 +295,7 @@ Antigravity Hooks ─┘        127.0.0.1          │              │
 | 平台 | 当前发布方式 | 限制 |
 |---|---|---|
 | macOS | `npm run dist:mac` 生成 DMG | 默认按宿主架构构建；未签名、未公证 |
-| Windows | `npm run dist` staging，再由 Inno Setup 编译 | 暂无公开 EXE；Inno 版本号需手动同步；托盘 Hook 安装路径待修复 |
+| Windows | `npm run dist` staging，再由 Inno Setup 编译 | 暂无公开 EXE；Inno 版本号需手动同步；Windows 安装版当前需手动配置 Hook |
 | Linux | 源码运行 | 未完整验证，无正式安装包 |
 
 版本号以 `package.json` 与 `package-lock.json` 为应用构建来源。发布 Windows 安装包时还需同步 `installer/light.iss`。
@@ -339,25 +339,4 @@ Antigravity Hooks ─┘        127.0.0.1          │              │
 
 ## 13. 后续路线
 
-### 近期
-
-- 支持空闲会话长时间保留（固定/免自动回收按钮），并在原窗口或终端分屏已关闭时支持重新拉起并恢复对应会话。
-- 支持 Subagent 生命周期与父子会话关联，在胶囊和详情面板中区分展示主会话与后台子代理的状态及进展。
-- 为状态机、Hook 安装合并和多会话聚合补自动化测试。
-- 让 Windows 安装器版本自动读取 `package.json`，消除手动同步。
-- 完成 macOS 签名、公证和标准 Release 流程。
-- 增加应用内版本与诊断信息，包括 Hook 最近成功时间。
-- 提供超时时长、端口和开机启动的设置界面。
-
-### 中期
-
-- 增加更多 Agent 适配器和自定义 Agent 注册机制。
-- 提供可选、受控的本地历史记录。
-- 改进长任务心跳，降低看门狗误判。
-- 完善 Linux 适配与安装包。
-
-### 暂不承诺
-
-- 微信、邮件、Slack、GitHub 等通用通知聚合
-- 跨设备同步与远程审批
-- Agent 输出全文与对话客户端能力
+未实现功能、工程积压与演进计划统一维护在 [待办与路线图](roadmap.md)，本文档仅记录当前已落地的产品基线。

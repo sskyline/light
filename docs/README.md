@@ -2,7 +2,8 @@
 
 | 文档 | 内容 |
 |---|---|
-| [产品定义](product.md) | 产品目标、当前功能、状态模型、验收标准与路线图 |
+| [产品定义](product.md) | 产品目标、当前功能基线、状态模型、技术架构与验收标准 |
+| [待办与路线图](roadmap.md) | 唯一待办清单：下一版本重点、工程积压、远期探索与非目标 |
 | [Hooks 接入与排障](hooks.md) | Claude Code、Codex、Antigravity 的手动配置、日志和包装脚本 |
 | [Windows 打包与安装器](windows-packaging.md) | Windows staging 与 Inno Setup 发布流程 |
 | [1.1.0 发布说明](releases/1.1.0.md) | 会话跳转、工具活动摘要、自动审批失败提醒与连接诊断 |

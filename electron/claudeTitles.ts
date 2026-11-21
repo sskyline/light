@@ -1,6 +1,6 @@
 import { lstat, open, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveAgentConfigPaths } from "./hookInstaller";
 import { SESSION_UUID } from "./state";
 
 async function findTranscript(projects: string, sessionId: string): Promise<string | undefined> {
@@ -19,7 +19,7 @@ async function findTranscript(projects: string, sessionId: string): Promise<stri
 
 export async function readClaudeSessionTitle(
   sessionId: string,
-  claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
+  claudeHome = resolveAgentConfigPaths().claudeDir,
 ): Promise<string | null> {
   if (!SESSION_UUID.test(sessionId)) return null;
 

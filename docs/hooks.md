@@ -2,7 +2,7 @@
 
 Light 通过本地 HTTP 服务（`127.0.0.1:51789`）接收状态事件。本目录提供三类接入脚本：
 
-在「连接与诊断」中点「接入 Hooks」或「重新接入」，即可同步适配器和 `terminal-source.mjs`。手动复制脚本时，请把这个文件放在适配器旁边。
+在「连接与诊断」中点「接入 Hooks」或「重新接入」，即可同步适配器和 `terminal-source.mjs`。手动复制脚本时，建议将 `terminal-source.mjs` 放在适配器旁边以启用终端分屏定位（若遗漏该文件，Hook 仍能正常上报状态事件，仅降级略过分屏标识；通过软链调用 `.sh` 或 `.mjs` 脚本时也会自动按真实路径查找）。
 
 在 Light 中，点会话标题或左侧箭头可以展开或收起进展。macOS 上，iTerm2 和 Ghostty 的新版 Hook 会随新事件上报可用的分屏标识。会话右侧出现 ↗ 时，点它可以回到原分屏。首次跳转到 Ghostty 时，macOS 可能请求自动化权限。
 
@@ -224,6 +224,8 @@ Antigravity 的 `PostToolUse.error` 或 `Stop.error` 明确上报自动安全检
 
 | 变量 | 默认 | 作用 |
 |---|---|---|
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code 自定义配置目录；Light 的连接诊断、一键接入与标题读取同步使用 |
+| `CODEX_HOME` | `~/.codex` | Codex 自定义主目录；Light 的连接诊断、一键接入、标题读取与审核关联同步使用 |
 | `LIGHT_PORT` | `51789` | 仅改变 Hook/包装脚本的目标端口；Light 主进程当前固定监听 51789，通常不要修改 |
 | `CODEX_BIN` | `codex` | Codex 二进制路径（PATH 里没有 codex 时用） |
 

@@ -45,12 +45,69 @@ export type TargetResult = {
   error?: string;
 };
 
-type InstallHooksOptions = {
+export type InstallHooksOptions = {
   appPath: string;
   execPath: string;
   userDataPath: string;
   homeDir?: string;
+  env?: NodeJS.ProcessEnv;
 };
+
+type AgentConfigPathOptions = {
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+};
+
+type AgentConfigPaths = {
+  homeDir: string;
+  claudeDir: string;
+  codexDir: string;
+  claudeFile: string;
+  codexFile: string;
+  antigravityFile: string;
+};
+
+function expandHomeDir(rawPath: string, homeDir: string): string {
+  if (rawPath === "~") return homeDir;
+  if (rawPath.startsWith("~/") || rawPath.startsWith("~\\")) {
+    return path.join(homeDir, rawPath.slice(2));
+  }
+  return path.normalize(rawPath);
+}
+
+export function resolveAgentConfigPaths(options?: AgentConfigPathOptions): AgentConfigPaths {
+  const rawHome = options?.homeDir?.trim();
+  const homeDir = path.normalize(rawHome ? rawHome : os.homedir());
+  const env = options?.env !== undefined
+    ? options.env
+    : options?.homeDir !== undefined
+      ? undefined
+      : process.env;
+
+  const rawClaudeDir = env?.CLAUDE_CONFIG_DIR?.trim();
+  const rawCodexDir = env?.CODEX_HOME?.trim();
+  const claudeDir = rawClaudeDir ? expandHomeDir(rawClaudeDir, homeDir) : path.join(homeDir, ".claude");
+  const codexDir = rawCodexDir ? expandHomeDir(rawCodexDir, homeDir) : path.join(homeDir, ".codex");
+
+  return {
+    homeDir,
+    claudeDir,
+    codexDir,
+    claudeFile: path.join(claudeDir, "settings.json"),
+    codexFile: path.join(codexDir, "hooks.json"),
+    antigravityFile: path.join(homeDir, ".gemini", "config", "hooks.json"),
+  };
+}
+
+function formatConfigDisplayPath(filePath: string, homeDir: string): string {
+  const normalizedFile = path.normalize(filePath);
+  const normalizedHome = path.normalize(homeDir);
+  const prefix = normalizedHome.endsWith(path.sep) ? normalizedHome : normalizedHome + path.sep;
+  if (normalizedFile.startsWith(prefix)) {
+    return "~/" + normalizedFile.slice(prefix.length).split(path.sep).join("/");
+  }
+  return normalizedFile;
+}
 
 const CLAUDE_SPECS: HookSpec[] = [
   { event: "SessionStart", arg: "session_start" },
@@ -97,8 +154,10 @@ function findAntigravityHooks(config: HookConfig, event: string): Record<string,
 }
 
 export function installAntigravityHooks(options: InstallHooksOptions): TargetResult {
-  const homeDir = options.homeDir ?? os.homedir();
-  const filePath = path.join(homeDir, ".gemini", "config", "hooks.json");
+  const { antigravityFile: filePath } = resolveAgentConfigPaths({
+    homeDir: options.homeDir,
+    env: options.env,
+  });
   const result: TargetResult = {
     target: "Antigravity", path: filePath, changed: false, added: 0, updated: 0, skipped: 0,
   };
@@ -327,13 +386,12 @@ function installTarget(
   return { target, path: filePath, changed: true, added, updated, skipped, backupPath };
 }
 
-export function readHookConnections(home?: string) {
-  const claudeDir = (!home && process.env.CLAUDE_CONFIG_DIR) || path.join(home ?? os.homedir(), ".claude");
-  const codexDir = (!home && process.env.CODEX_HOME) || path.join(home ?? os.homedir(), ".codex");
+export function readHookConnections(home?: string, env?: NodeJS.ProcessEnv) {
+  const paths = resolveAgentConfigPaths({ homeDir: home, env });
   const targets = [
-    { agent: "claude-code", name: "Claude Code", file: path.join(claudeDir, "settings.json"), events: CLAUDE_SPECS.map(s => s.event) },
-    { agent: "codex", name: "Codex", file: path.join(codexDir, "hooks.json"), events: CODEX_SPECS.map(s => s.event) },
-    { agent: "antigravity", name: "Antigravity", file: path.join(home ?? os.homedir(), ".gemini", "config", "hooks.json"), events: ANTIGRAVITY_EVENTS },
+    { agent: "claude-code", name: "Claude Code", file: paths.claudeFile, events: CLAUDE_SPECS.map(s => s.event) },
+    { agent: "codex", name: "Codex", file: paths.codexFile, events: CODEX_SPECS.map(s => s.event) },
+    { agent: "antigravity", name: "Antigravity", file: paths.antigravityFile, events: ANTIGRAVITY_EVENTS },
   ] as const;
   return targets.map(({ agent, name, file, events }) => {
     const { config, error } = readJsonConfig(file);
@@ -352,14 +410,16 @@ export function readHookConnections(home?: string) {
       status = active === events.length ? "Hook 已配置" : active ? `部分已配置（${active}/${events.length}）` :
         count(false) ? "Hook 已禁用" : "未找到 Light Hook";
     }
-    const prefix = (home ?? os.homedir()) + path.sep;
-    const configPath = file.startsWith(prefix) ? "~/" + file.slice(prefix.length).split(path.sep).join("/") : file;
+    const configPath = formatConfigDisplayPath(file, paths.homeDir);
     return { agent, name, status, configPath, configured: status === "Hook 已配置" };
   });
 }
 
 export function installHooks(options: InstallHooksOptions): InstallHooksResult {
-  const homeDir = options.homeDir ?? os.homedir();
+  const paths = resolveAgentConfigPaths({
+    homeDir: options.homeDir,
+    env: options.env,
+  });
   copyHookScript(options.appPath, options.userDataPath, "terminal-source.mjs");
   const claudeScript = copyHookScript(options.appPath, options.userDataPath, "claude-hook.mjs");
   const codexScript = copyHookScript(options.appPath, options.userDataPath, "codex-hook.mjs");
@@ -368,7 +428,7 @@ export function installHooks(options: InstallHooksOptions): InstallHooksResult {
     hookDir: path.dirname(claudeScript),
     claude: installTarget(
       "Claude Code",
-      path.join(homeDir, ".claude", "settings.json"),
+      paths.claudeFile,
       CLAUDE_SPECS,
       options.execPath,
       claudeScript,
@@ -376,7 +436,7 @@ export function installHooks(options: InstallHooksOptions): InstallHooksResult {
     ),
     codex: installTarget(
       "Codex",
-      path.join(homeDir, ".codex", "hooks.json"),
+      paths.codexFile,
       CODEX_SPECS,
       options.execPath,
       codexScript,

@@ -2,7 +2,7 @@
 
 Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Codex CLI 与 Antigravity 的生命周期 Hooks，实时显示 AI 会话的工作、完成和出错状态。普通审批静默处理，确认自动审批失败时单独提示。
 
-当前版本：`1.1.0`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
+当前版本：`1.1.0`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[待办与路线图](docs/roadmap.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
 
 ## 能做什么
 
@@ -71,14 +71,14 @@ Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Code
 1. 先把 Light 安装到本机并启动，不要直接从 macOS DMG 挂载盘配置 Hook。
 2. 点击系统托盘中的 Light 图标选择“连接与诊断…”（或展开胶囊点击右上角双滑杆图标），再点击底部的“接入 Hooks”。
 3. Light 会把 Hook 脚本复制到自己的用户数据目录，并安全合并到：
-   - Claude Code：`~/.claude/settings.json`
-   - Codex：`~/.codex/hooks.json`
+   - Claude Code：`~/.claude/settings.json`（若设置了 `CLAUDE_CONFIG_DIR` 则写入对应目录）
+   - Codex：`~/.codex/hooks.json`（若设置了 `CODEX_HOME` 则写入对应目录）
    - Antigravity：`~/.gemini/config/hooks.json`
 4. 如果原配置发生修改，Light 会先创建带时间戳的备份；已有安装器生成的 Hook 会更新到当前应用路径，自定义命令及其他 Hook 保持不变。
 5. 完全重启 Claude Code / Codex，在 CLI 中执行 `/hooks`，确认并信任新增 Hook。
 6. Antigravity 在新一轮对话加载配置；如果未生效，按原有启动方式完全退出并重新打开。
 
-macOS 安装版使用 Electron 自身执行 Hook 脚本，因此不要求另外为 Hook 配置 Node 路径。当前 Windows staging 的 Hook 资源路径仍待修复，请先按手动方式接入。
+macOS 安装版使用 Electron 自身执行 Hook 脚本，因此不要求另外为 Hook 配置 Node 路径。Windows 当前请按 [Hooks 接入与排障](docs/hooks.md) 手动配置。
 
 从开发版升级到 DMG 安装版时，先退出开发版 Light，把新版拖入“应用程序”，启动后在“连接与诊断”中再点一次“接入 Hooks”/“重新接入”。安装器会将自己生成的开发版执行路径迁移到安装版，保留其他处理器、matcher 和禁用设置。
 

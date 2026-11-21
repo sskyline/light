@@ -4,8 +4,31 @@
 // Requires `codex` to be available on PATH.
 
 import http from "node:http";
-import { terminalSource } from "./terminal-source.mjs";
+import fs from "node:fs";
+import path from "node:path";
 import { spawn } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+async function loadTerminalSourceFn() {
+  const selfPath = fileURLToPath(import.meta.url);
+  const dirs = new Set();
+  try {
+    dirs.add(path.dirname(fs.realpathSync(selfPath)));
+  } catch {
+    /* ignore */
+  }
+  dirs.add(path.dirname(selfPath));
+  for (const dir of dirs) {
+    try {
+      const mod = await import(pathToFileURL(path.join(dir, "terminal-source.mjs")).href);
+      if (typeof mod?.terminalSource === "function") return () => mod.terminalSource();
+    } catch {
+      /* ignore missing or unreadable helper */
+    }
+  }
+  return () => null;
+}
+const getTerminalSource = await loadTerminalSourceFn();
 
 const PORT = Number(process.env.LIGHT_PORT || 51789);
 const HOST = "127.0.0.1";
@@ -41,7 +64,7 @@ function post(payload) {
 async function notify(type, extra = {}) {
   await post({
     agent: "codex",
-    terminal: terminalSource(),
+    terminal: getTerminalSource(),
     type,
     timestamp: new Date().toISOString(),
     ...extra,

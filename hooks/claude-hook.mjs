@@ -6,10 +6,30 @@
 // parse for sessionId, tool name, and prompt text.
 
 import http from "node:http";
-import { terminalSource } from "./terminal-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+async function loadTerminalSource() {
+  const selfPath = fileURLToPath(import.meta.url);
+  const dirs = new Set();
+  try {
+    dirs.add(path.dirname(fs.realpathSync(selfPath)));
+  } catch {
+    /* ignore */
+  }
+  dirs.add(path.dirname(selfPath));
+  for (const dir of dirs) {
+    try {
+      const mod = await import(pathToFileURL(path.join(dir, "terminal-source.mjs")).href);
+      if (typeof mod?.terminalSource === "function") return mod.terminalSource();
+    } catch {
+      /* ignore missing or unreadable helper */
+    }
+  }
+  return null;
+}
 
 const PORT = Number(process.env.LIGHT_PORT || 51789);
 const HOST = "127.0.0.1";
@@ -136,11 +156,12 @@ async function postWithLog(payload) {
     /* ignore parse errors — the event still goes through */
   }
   const fields = pickFields(parsed);
+  const terminal = await loadTerminalSource();
   const ok = await postWithLog({
     agent: "claude-code",
     type: TYPE,
     sessionId: fields.sessionId,
-    terminal: terminalSource(),
+    terminal,
     tool: fields.tool,
     toolCallId: parsed?.tool_use_id,
     message: fields.message,

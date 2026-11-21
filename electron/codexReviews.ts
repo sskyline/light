@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { stat } from "node:fs/promises";
 import { promisify } from "node:util";
+import { resolveAgentConfigPaths } from "./hookInstaller";
 import { SESSION_UUID, type EventType } from "./state";
 
 const execute = promisify(execFile);
@@ -57,7 +57,7 @@ export class CodexReviewWatcher {
   private generation = 0;
 
   constructor(private readonly onDenied: (thread: string, reason?: string) => void,
-    private readonly db = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "state_5.sqlite")) {}
+    private readonly db = join(resolveAgentConfigPaths().codexDir, "state_5.sqlite")) {}
 
   track(thread: unknown, turn: unknown, event: EventType): void {
     if (typeof thread !== "string" || !SESSION_UUID.test(thread)) return;

@@ -3,9 +3,29 @@
 // PreToolUse is intentionally unsupported: its response controls tool permission.
 import fs from "node:fs";
 import http from "node:http";
-import { terminalSource } from "./terminal-source.mjs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+async function loadTerminalSource() {
+  const selfPath = fileURLToPath(import.meta.url);
+  const dirs = new Set();
+  try {
+    dirs.add(path.dirname(fs.realpathSync(selfPath)));
+  } catch {
+    /* ignore */
+  }
+  dirs.add(path.dirname(selfPath));
+  for (const dir of dirs) {
+    try {
+      const mod = await import(pathToFileURL(path.join(dir, "terminal-source.mjs")).href);
+      if (typeof mod?.terminalSource === "function") return mod.terminalSource();
+    } catch {
+      /* ignore missing or unreadable helper */
+    }
+  }
+  return null;
+}
 
 const logPath = path.join(os.tmpdir(), "light-antigravity-hook.log");
 const hookEvent = process.argv[2];
@@ -59,13 +79,13 @@ function autoReviewError(error) {
   return automaticBlocks.some(label => verdict === label || verdict === label + "." || verdict.startsWith(label + ": "));
 }
 
-function eventFrom(payload) {
+function eventFrom(payload, terminal) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
   // Never merge malformed/missing conversation IDs into a shared default session.
   if (typeof payload.conversationId !== "string" || !payload.conversationId.trim()) return;
   const event = {
     agent: "antigravity",
-    terminal: terminalSource(),
+    terminal,
     sessionId: payload.conversationId,
     timestamp: new Date().toISOString(),
   };
@@ -158,7 +178,8 @@ async function post(event) {
 try {
   const raw = await readInput();
   const payload = raw ? JSON.parse(raw) : undefined;
-  const event = eventFrom(payload);
+  const terminal = await loadTerminalSource();
+  const event = eventFrom(payload, terminal);
   if (event) {
     const result = await post(event);
     // Do not log stdin, prompts, tool arguments, or the HTTP response body.

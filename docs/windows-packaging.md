@@ -23,9 +23,7 @@ npm run dist
 发布前先把 `installer/light.iss` 中的 `MyAppVersion` 与 `package.json` 同步。产物为
 `release\Light-Setup-<version>.exe`。
 
-> 当前限制：Windows staging 把 Hook 脚本放在 `release/Light/hooks`，但托盘 Hook
-> 安装器仍从 `resources/app/hooks` 查找。修复资源路径前，Windows 安装版请按
-> [Hooks 接入文档](hooks.md) 手动配置。
+> 注意：Windows 安装版当前不支持应用内一键接入 Hooks（staging 输出在 `release/Light/hooks`），请按 [Hooks 接入文档](hooks.md) 手动配置；后续对齐计划见 [待办与路线图](roadmap.md)。
 
 ## 安装包特性
 

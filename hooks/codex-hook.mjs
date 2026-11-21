@@ -4,11 +4,31 @@
 // Example events: UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Stop, Interrupt
 
 import http from "node:http";
-import { terminalSource } from "./terminal-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+async function loadTerminalSource() {
+  const selfPath = fileURLToPath(import.meta.url);
+  const dirs = new Set();
+  try {
+    dirs.add(path.dirname(fs.realpathSync(selfPath)));
+  } catch {
+    /* ignore */
+  }
+  dirs.add(path.dirname(selfPath));
+  for (const dir of dirs) {
+    try {
+      const mod = await import(pathToFileURL(path.join(dir, "terminal-source.mjs")).href);
+      if (typeof mod?.terminalSource === "function") return mod.terminalSource();
+    } catch {
+      /* ignore missing or unreadable helper */
+    }
+  }
+  return null;
+}
 
 const PORT = Number(process.env.LIGHT_PORT || 51789);
 const HOST = "127.0.0.1";
@@ -264,9 +284,10 @@ function post(payload) {
   }
 
   const tool = pickTool(parsed);
+  const terminal = await loadTerminalSource();
   const payload = {
     agent: "codex",
-    terminal: terminalSource(),
+    terminal,
     type,
     sessionId,
     turnId: typeof parsed.turn_id === "string" ? parsed.turn_id : undefined,

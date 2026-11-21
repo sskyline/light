@@ -1,19 +1,44 @@
 {
-  "_comment": "Copy the 'hooks' block below into your ~/.claude/settings.json. Replace <LIGHT_DIR> with the absolute path to your light/hooks directory (use double backslashes on Windows).",
+  "_comment": "Copy the 'hooks' block below into your ~/.claude/settings.json. Replace <LIGHT_DIR> with the absolute path to your light directory (use forward slashes / on all platforms, including Windows).",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" session_start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" session_end"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
-        "matcher": "",
         "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd user_prompt" }
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" user_prompt"
+          }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "",
+        "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd tool_use" }
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" tool_use"
+          }
         ]
       }
     ],
@@ -21,7 +46,10 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd approval_request" }
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" approval_request"
+          }
         ]
       }
     ],
@@ -29,7 +57,10 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd auto_approval_failed" }
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" auto_approval_failed"
+          }
         ]
       }
     ],
@@ -37,23 +68,20 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd tool_result" }
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" tool_result"
+          }
         ]
       }
     ],
     "Stop": [
       {
-        "matcher": "",
         "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd stop" }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd notification" }
+          {
+            "type": "command",
+            "command": "node \"<LIGHT_DIR>/hooks/claude-hook.mjs\" stop"
+          }
         ]
       }
     ]

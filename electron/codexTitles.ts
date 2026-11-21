@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveAgentConfigPaths } from "./hookInstaller";
 
 export async function readCodexThreadTitle(
   threadId: string,
-  codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"),
+  codexHome = resolveAgentConfigPaths().codexDir,
 ): Promise<string | null> {
   let index: string;
   try {
