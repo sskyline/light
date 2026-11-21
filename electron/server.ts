@@ -3,13 +3,15 @@ import {
   StateStore,
   isValidAgent,
   isValidType,
-  type LightEvent,
+  type LightEvent, type AgentId,
 } from "./state";
 
 export const DEFAULT_PORT = 51789;
 const MAX_BODY_BYTES = 32 * 1024;
 
-export function startServer(store: StateStore, port: number = DEFAULT_PORT): http.Server {
+export function startServer(store: StateStore, port: number = DEFAULT_PORT,
+  onCodexHook?: (thread: unknown, turn: unknown, type: LightEvent["type"]) => void,
+  onReceived?: (agent: AgentId) => void): http.Server {
   const server = http.createServer((req, res) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
 
@@ -57,10 +59,14 @@ export function startServer(store: StateStore, port: number = DEFAULT_PORT): htt
             type: body.type,
             sessionId: body.sessionId,
             tool: body.tool,
+            toolTarget: body.toolTarget,
+            toolCallId: body.toolCallId,
             message: body.message,
             timestamp: body.timestamp ?? new Date().toISOString(),
           };
-          const ingested = store.ingest(evt);
+          const ingested = store.ingest({ ...evt, terminal: body.terminal, autoApprovalFailed: body.autoApprovalFailed === true });
+          onReceived?.(evt.agent);
+          if (evt.agent === "codex") onCodexHook?.(evt.sessionId, body.turnId, evt.type);
           res.statusCode = 200;
           res.end(JSON.stringify({ ok: true, event: ingested }));
         } catch (err: unknown) {

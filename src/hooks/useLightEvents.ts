@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
-import type { AppState, LightEvent, Memo, PresenceState, SystemState } from "../types";
+import type { AppState, LightEvent, PresenceState } from "../types";
 
 const EMPTY_STATE: AppState = { sessions: [] };
-const EMPTY_SYSTEM: SystemState = {
-  media: null,
-  bridgeReady: false,
-};
 
 function getBridge() {
   return typeof window !== "undefined" ? window.light : undefined;
@@ -39,40 +35,19 @@ export function useLatestEvent(): LightEvent | null {
   return evt;
 }
 
-export function useMemos(): Memo[] {
-  const [memos, setMemos] = useState<Memo[]>([]);
+export function useSessionTitle(key?: string): string | null {
+  const [sessionTitle, setSessionTitle] = useState<{ key: string; title: string | null }>();
   useEffect(() => {
-    const bridge = getBridge();
-    if (!bridge) return;
+    const getTitle = getBridge()?.getSessionTitle;
+    if (!key || !getTitle) return;
     let cancelled = false;
-    bridge.getMemos().then((m) => {
-      if (!cancelled) setMemos(m);
-    });
-    const off = bridge.onMemos((m) => setMemos(m as Memo[]));
-    return () => {
-      cancelled = true;
-      off();
+    const setTitle = (title: string | null) => {
+      if (!cancelled) setSessionTitle({ key, title });
     };
-  }, []);
-  return memos;
-}
-
-export function useSystem(): SystemState {
-  const [sys, setSys] = useState<SystemState>(EMPTY_SYSTEM);
-  useEffect(() => {
-    const bridge = getBridge();
-    if (!bridge) return;
-    let cancelled = false;
-    bridge.getSystem().then((s) => {
-      if (!cancelled) setSys(s);
-    });
-    const off = bridge.onSystem((s) => setSys(s as SystemState));
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, []);
-  return sys;
+    getTitle(key).then(setTitle, () => setTitle(null));
+    return () => { cancelled = true; };
+  }, [key]);
+  return sessionTitle && sessionTitle.key === key ? sessionTitle.title : null;
 }
 
 export function usePresence(): PresenceState | null {

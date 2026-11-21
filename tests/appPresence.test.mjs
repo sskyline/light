@@ -5,9 +5,9 @@ import presenceModule from "../dist-electron/appPresence.js";
 const { PresenceWatcher, parseProbeOutput } = presenceModule;
 
 const OUT = JSON.stringify({
-  "com.google.antigravity": { installed: true, running: false },
-  "com.openai.codex": { installed: true, running: true },
-  "com.anthropic.claudefordesktop": { installed: false, running: false },
+  "com.google.antigravity": { installed: true },
+  "com.openai.codex": { installed: true },
+  "com.anthropic.claudefordesktop": { installed: false },
 });
 
 function fakeExec() {
@@ -38,16 +38,15 @@ function makeWatcher(exec, events) {
 
 test("parseProbeOutput maps bundle ids back to launch targets", () => {
   const parsed = parseProbeOutput(OUT);
-  assert.deepEqual(parsed.antigravity, { installed: true, running: false });
-  assert.deepEqual(parsed.codex, { installed: true, running: true });
-  assert.deepEqual(parsed["claude-code"], { installed: false, running: false });
+  assert.deepEqual(parsed.antigravity, { installed: true });
+  assert.deepEqual(parsed.codex, { installed: true });
+  assert.deepEqual(parsed["claude-code"], { installed: false });
 });
 
-test("parseProbeOutput treats missing bundle ids as installed-but-unknown and rejects garbage", () => {
-  const partial = parseProbeOutput(JSON.stringify({ "com.openai.codex": { installed: false, running: false } }));
-  assert.deepEqual(partial.codex, { installed: false, running: false });
+test("parseProbeOutput treats missing bundle ids as installed and rejects garbage", () => {
+  const partial = parseProbeOutput(JSON.stringify({ "com.openai.codex": { installed: false } }));
+  assert.deepEqual(partial.codex, { installed: false });
   assert.equal(partial.antigravity.installed, true, "missing key must fail open");
-  assert.equal(partial.antigravity.running, false);
   assert.equal(parseProbeOutput("not json"), null);
   assert.equal(parseProbeOutput("42"), null);
 });
@@ -64,7 +63,7 @@ test("watcher probes immediately on start and emits only the parsed change", () 
 
   f.flush(null, OUT);
   assert.equal(events.length, 1);
-  assert.equal(events[0].codex.running, true);
+  assert.equal(events[0].codex.installed, true);
   assert.equal(events[0]["claude-code"].installed, false);
   w.stop();
 });
@@ -84,12 +83,12 @@ test("watcher does not re-emit when consecutive probes return the same state", (
 
   w.probeNow();
   f.flush(null, JSON.stringify({
-    "com.google.antigravity": { installed: true, running: true },
-    "com.openai.codex": { installed: true, running: true },
-    "com.anthropic.claudefordesktop": { installed: false, running: false },
+    "com.google.antigravity": { installed: false },
+    "com.openai.codex": { installed: true },
+    "com.anthropic.claudefordesktop": { installed: false },
   }));
   assert.equal(events.length, 2, "real change emits exactly once");
-  assert.equal(events[1].antigravity.running, true);
+  assert.equal(events[1].antigravity.installed, false);
   w.stop();
 });
 
@@ -104,7 +103,7 @@ test("probe failure keeps the last known state and stays silent", () => {
   w.probeNow();
   assert.doesNotThrow(() => f.flush(new Error("osascript timed out")));
   assert.equal(events.length, 1);
-  assert.equal(w.getState().codex.running, true, "state preserved across failed probe");
+  assert.equal(w.getState()["claude-code"].installed, false, "state preserved across failed probe");
 
   w.probeNow();
   f.flush(null, "garbage");
@@ -124,15 +123,13 @@ test("overlapping probes are skipped while one is in flight", () => {
   w.stop();
 });
 
-test("markRunning and markNotInstalled emit immediately and imply each other", () => {
+test("markNotInstalled emits immediately", () => {
   const events = [];
   const w = makeWatcher(undefined, events);
   w.start();
 
-  w.markRunning("antigravity");
-  assert.deepEqual(w.getState().antigravity, { installed: true, running: true });
   w.markNotInstalled("codex");
-  assert.deepEqual(w.getState().codex, { installed: false, running: false });
-  assert.equal(events.length, 2);
+  assert.deepEqual(w.getState().codex, { installed: false });
+  assert.equal(events.length, 1);
   w.stop();
 });

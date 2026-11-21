@@ -14,9 +14,8 @@
 //       package.json         (trimmed, main -> dist-electron/main.js)
 //       dist/                (renderer build)
 //       dist-electron/       (compiled main + preload)
-//       bridge/              (SMTC / notification PowerShell helpers)
 //       icon.ico             (tray + window icon)
-//     hooks/                 (Claude Code / Codex integration scripts)
+//     hooks/                 (Claude Code / Codex / Antigravity integration scripts)
 //     light.ico
 //
 // Run AFTER `npm run build`.  npm run dist == build + stage.
@@ -73,7 +72,6 @@ rmrf(path.join(out, "resources", "default_app.asar"));
 log("copying app payload …");
 copyDir(distRenderer, path.join(appDir, "dist"));
 copyDir(distElectron, path.join(appDir, "dist-electron"));
-copyDir(path.join(root, "bridge"), path.join(appDir, "bridge"));
 fs.copyFileSync(iconSrc, path.join(appDir, "icon.ico"));
 
 // Trimmed production package.json (no devDeps, no scripts).

@@ -1,9 +1,16 @@
 import { execFile } from "node:child_process";
-import { BUNDLE_IDS, type SwitchTarget } from "./appSwitcher";
+
+export type SwitchTarget = "antigravity" | "codex" | "claude-code";
+
+// codex 的显示名是 ChatGPT.app，bundle id 表明它就是 Codex 桌面版。
+export const BUNDLE_IDS: Record<SwitchTarget, string> = {
+  antigravity: "com.google.antigravity",
+  codex: "com.openai.codex",
+  "claude-code": "com.anthropic.claudefordesktop",
+};
 
 export interface AppPresence {
   installed: boolean;
-  running: boolean;
 }
 
 export type PresenceState = Record<SwitchTarget, AppPresence>;
@@ -15,9 +22,8 @@ export type ProbeExec = (
 ) => void;
 
 const PROBE_TIMEOUT_MS = 4000;
-export const DEFAULT_PROBE_INTERVAL_MS = 15000;
 
-// JXA 在同一个 osascript 进程里查 LaunchServices,一次拿到安装态和运行态。
+// JXA 在同一个 osascript 进程里查 LaunchServices 安装态。
 // 注意:JXA 把 ObjC 的 nil 桥接成一个 truthy 的函数对象(对它发任何消息都再
 // 返回 nil),所以判断安装与否必须取 absoluteString 再 ObjC.unwrap——直接判
 // URLForApplicationWithBundleIdentifier 的返回值是否为 undefined 会把未安装
@@ -25,13 +31,6 @@ export const DEFAULT_PROBE_INTERVAL_MS = 15000;
 const PROBE_SCRIPT = `
 ObjC.import('AppKit');
 const ws = $.NSWorkspace.sharedWorkspace;
-const running = {};
-const apps = ws.runningApplications;
-const n = apps.count;
-for (let i = 0; i < n; i++) {
-  const bid = ObjC.unwrap(apps.objectAtIndex(i).bundleIdentifier);
-  if (bid) running[bid] = true;
-}
 const out = {};
 ${JSON.stringify(Object.values(BUNDLE_IDS))}.forEach((id) => {
   let path;
@@ -40,7 +39,7 @@ ${JSON.stringify(Object.values(BUNDLE_IDS))}.forEach((id) => {
   } catch (e) {
     path = undefined;
   }
-  out[id] = { installed: typeof path === "string" && path.length > 0, running: !!running[id] };
+  out[id] = { installed: typeof path === "string" && path.length > 0 };
 });
 JSON.stringify(out);
 `;
@@ -48,11 +47,11 @@ JSON.stringify(out);
 const defaultExec: ProbeExec = (cmd, args, cb) =>
   execFile(cmd, args, { timeout: PROBE_TIMEOUT_MS }, (err, stdout) => cb(err, stdout ?? ""));
 
-// 首次探测完成前的乐观默认:视为已安装、未运行,保持按钮可见。
+// 首次探测完成前的乐观默认:视为已安装,保持跳转按钮可见。
 export function defaultPresence(): PresenceState {
   const out = {} as PresenceState;
   for (const target of Object.keys(BUNDLE_IDS) as SwitchTarget[]) {
-    out[target] = { installed: true, running: false };
+    out[target] = { installed: true };
   }
   return out;
 }
@@ -67,7 +66,6 @@ export function parseProbeOutput(stdout: string): PresenceState | null {
       // 单个 bundle id 缺键时按未探测处理:宁可多显示按钮也不误隐藏。
       out[target] = {
         installed: typeof v?.installed === "boolean" ? v.installed : true,
-        running: typeof v?.running === "boolean" ? v.running : false,
       };
     }
     return out;
@@ -78,13 +76,13 @@ export function parseProbeOutput(stdout: string): PresenceState | null {
 
 function presenceEqual(a: PresenceState, b: PresenceState): boolean {
   return (Object.keys(BUNDLE_IDS) as SwitchTarget[]).every(
-    (t) => a[t].installed === b[t].installed && a[t].running === b[t].running,
+    (t) => a[t].installed === b[t].installed,
   );
 }
 
 export interface PresenceWatcherOptions {
   onChange: (state: PresenceState) => void;
-  intervalMs?: number;
+  intervalMs?: number | null;
   exec?: ProbeExec;
   log?: (...args: unknown[]) => void;
 }
@@ -94,14 +92,14 @@ export class PresenceWatcher {
   private timer: NodeJS.Timeout | null = null;
   private inFlight = false;
   private started = false;
-  private readonly intervalMs: number;
+  private readonly intervalMs: number | null;
   private readonly exec: ProbeExec;
   private readonly log: (...args: unknown[]) => void;
   private readonly onChange: (state: PresenceState) => void;
 
   constructor(opts: PresenceWatcherOptions) {
     this.onChange = opts.onChange;
-    this.intervalMs = opts.intervalMs ?? DEFAULT_PROBE_INTERVAL_MS;
+    this.intervalMs = opts.intervalMs ?? null;
     this.exec = opts.exec ?? defaultExec;
     this.log = opts.log ?? console.error;
   }
@@ -133,14 +131,9 @@ export class PresenceWatcher {
     this.probe();
   }
 
-  // 点击启动按钮后的乐观标记;能启动说明一定已安装。
-  markRunning(target: SwitchTarget): void {
-    this.apply({ ...this.state, [target]: { installed: true, running: true } });
-  }
-
   // open -b 失败是 LaunchServices 给的权威答案:未安装。
   markNotInstalled(target: SwitchTarget): void {
-    this.apply({ ...this.state, [target]: { installed: false, running: false } });
+    this.apply({ ...this.state, [target]: { installed: false } });
   }
 
   private probe(): void {
@@ -160,7 +153,7 @@ export class PresenceWatcher {
   }
 
   private schedule(): void {
-    if (!this.started) return;
+    if (!this.started || this.intervalMs == null || this.intervalMs <= 0) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;

@@ -25,6 +25,14 @@
         ]
       }
     ],
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "<LIGHT_DIR>\\\\claude-hook.cmd auto_approval_failed" }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",

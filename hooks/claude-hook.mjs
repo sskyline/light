@@ -6,6 +6,7 @@
 // parse for sessionId, tool name, and prompt text.
 
 import http from "node:http";
+import { terminalSource } from "./terminal-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -14,6 +15,7 @@ const PORT = Number(process.env.LIGHT_PORT || 51789);
 const HOST = "127.0.0.1";
 const RAW_TYPE = process.argv[2];
 const TYPE_MAP = new Map([
+  ["PermissionDenied", "auto_approval_failed"],
   ["PermissionRequest", "approval_request"],
   ["permission_request", "approval_request"],
   ["PostToolUse", "tool_result"],
@@ -36,6 +38,7 @@ const VALID = new Set([
   "user_prompt",
   "tool_use",
   "approval_request",
+  "auto_approval_failed",
   "tool_result",
   "stop",
   "notification",
@@ -66,8 +69,11 @@ function pickFields(parsed) {
     typeof parsed.session_id === "string" ? parsed.session_id : undefined;
   const tool =
     typeof parsed.tool_name === "string" ? parsed.tool_name : undefined;
+  if (TYPE === "auto_approval_failed") {
+    return { sessionId, tool, message: typeof parsed.reason === "string" ? parsed.reason : undefined };
+  }
   let message;
-  if (TYPE === "approval_request" || TYPE === "tool_result") {
+  if (TYPE === "tool_use" || TYPE === "approval_request" || TYPE === "tool_result") {
     const input = parsed.tool_input && typeof parsed.tool_input === "object" ? parsed.tool_input : {};
     const command = typeof input.command === "string" ? input.command : undefined;
     const description = typeof input.description === "string" ? input.description : undefined;
@@ -134,7 +140,9 @@ async function postWithLog(payload) {
     agent: "claude-code",
     type: TYPE,
     sessionId: fields.sessionId,
+    terminal: terminalSource(),
     tool: fields.tool,
+    toolCallId: parsed?.tool_use_id,
     message: fields.message,
     timestamp: new Date().toISOString(),
   });

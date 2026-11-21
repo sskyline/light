@@ -3,8 +3,7 @@
 // When the renderer runs in a plain browser (e.g. `vite` without Electron),
 // there is no preload script, so `window.light` is undefined and the island
 // would sit empty forever. This installs a fake bridge that feeds
-// representative sessions / media / memos so the UI can be developed and
-// visually verified in a normal browser tab.
+// representative sessions for UI development in a browser tab.
 //
 // It is gated behind `import.meta.env.DEV && !window.light` at the call site,
 // so it never runs inside the real Electron app (where the preload always
@@ -13,14 +12,11 @@
 import type {
   AppState,
   LightEvent,
-  Memo,
-  MediaAction,
   PresenceState,
   SessionState,
-  SystemState,
 } from "./types";
 
-type Mode = "working" | "done" | "idle" | "error" | "multi" | "cycle";
+type Mode = "working" | "done" | "idle" | "error" | "multi" | "antigravity" | "cycle";
 
 function param(name: string, fallback: string): string {
   const v = new URLSearchParams(window.location.search).get(name);
@@ -36,12 +32,11 @@ function claudeSession(over: Partial<SessionState>): SessionState {
     key: "claude-code::demo",
     agent: "claude-code",
     sessionId: "demo",
-    seq: 1,
     status: "idle",
     lastEventAt: iso(),
     recent: [
-      { agent: "claude-code", type: "tool_use", tool: "Bash", timestamp: iso(-2000) },
-      { agent: "claude-code", type: "tool_use", tool: "Edit", timestamp: iso(-9000) },
+      { agent: "claude-code", type: "tool_use", tool: "Bash", message: "Bash: npm test", timestamp: iso(-2000) },
+      { agent: "claude-code", type: "tool_result", tool: "Edit", message: "completed: Edit: src/styles.css", timestamp: iso(-9000) },
       { agent: "claude-code", type: "user_prompt", message: "修复灵动岛的玻璃质感", timestamp: iso(-42000) },
     ] as LightEvent[],
     ...over,
@@ -53,7 +48,6 @@ function codexSession(over: Partial<SessionState>): SessionState {
     key: "codex::demo",
     agent: "codex",
     sessionId: "demo",
-    seq: 1,
     status: "idle",
     lastEventAt: iso(),
     recent: [],
@@ -81,6 +75,16 @@ function sessionsFor(mode: Mode, t: number): SessionState[] {
       return [claudeSession({ status: "done" })];
     case "error":
       return [claudeSession({ status: "error" })];
+    case "antigravity":
+      return [{
+        key: "antigravity::demo",
+        agent: "antigravity",
+        sessionId: "demo",
+        status: "working",
+        startedAt: WORK_STARTED,
+        lastEventAt: iso(),
+        recent: [],
+      }];
     case "idle":
       return [claudeSession({ status: "idle" })];
     case "multi":
@@ -142,33 +146,15 @@ export function installMockBridge(): void {
   const mode = param("mock", "cycle") as Mode;
 
   const stateListeners = new Set<(s: AppState) => void>();
-  const systemListeners = new Set<(s: SystemState) => void>();
-  const memoListeners = new Set<(m: Memo[]) => void>();
   const eventListeners = new Set<(e: LightEvent) => void>();
   const presenceListeners = new Set<(p: PresenceState | null) => void>();
 
-  // ?noinstall=codex,antigravity 可以把对应 app 模拟成未安装(按钮应隐藏)。
+  // ?noinstall=codex,antigravity 可以把对应 app 模拟成未安装(跳转按钮应隐藏)。
   const noInstall = new Set(param("noinstall", "").split(",").filter(Boolean));
   const presence: PresenceState = {
-    antigravity: { installed: !noInstall.has("antigravity"), running: false },
-    codex: { installed: !noInstall.has("codex"), running: true },
-    "claude-code": { installed: !noInstall.has("claude-code"), running: true },
-  };
-
-  let memos: Memo[] = [
-    { id: "m1", text: "把玻璃质感在亮色壁纸下调好", completed: false, createdAt: iso(-60000) },
-    { id: "m2", text: "修掉 hover 抖动", completed: false, createdAt: iso(-50000) },
-  ];
-
-  const media: SystemState = {
-    media: {
-      playing: true,
-      title: "Weightless",
-      artist: "Marconi Union",
-      app: "cloudmusic",
-      updatedAt: iso(),
-    },
-    bridgeReady: true,
+    antigravity: { installed: !noInstall.has("antigravity") },
+    codex: { installed: !noInstall.has("codex") },
+    "claude-code": { installed: !noInstall.has("claude-code") },
   };
 
   let tick = 0;
@@ -178,8 +164,6 @@ export function installMockBridge(): void {
     const s = buildState();
     stateListeners.forEach((cb) => cb(s));
   };
-  const emitMemos = () => memoListeners.forEach((cb) => cb([...memos]));
-  const emitPresence = () => presenceListeners.forEach((cb) => cb({ ...presence }));
 
   // Drive the clock so the working timer climbs and `cycle` mode advances.
   window.setInterval(() => {
@@ -196,56 +180,29 @@ export function installMockBridge(): void {
       stateListeners.add(cb);
       return () => stateListeners.delete(cb);
     },
-    onMemos: (cb) => {
-      memoListeners.add(cb);
-      return () => memoListeners.delete(cb);
-    },
-    onSystem: (cb) => {
-      systemListeners.add(cb);
-      return () => systemListeners.delete(cb);
-    },
     onPresence: (cb) => {
       presenceListeners.add(cb);
       return () => presenceListeners.delete(cb);
     },
     onBlur: () => () => {},
+    getDiagnostics: async () => ({
+      service: { running: false, status: "浏览器预览", address: "127.0.0.1:51789" },
+      adapters: [],
+    }),
     getState: async () => buildState(),
-    getMemos: async () => [...memos],
-    getSystem: async () => media,
+    getSessionTitle: async (key) => {
+      if (key === "codex::demo") return "整理桌面状态面板";
+      if (key === "claude-code::demo") return "调整胶囊样式";
+      if (key === "antigravity::demo") return "检查项目构建流程";
+      return null;
+    },
     getPresence: async () => ({ ...presence }),
-    addMemo: (text: string) => {
-      memos = [
-        ...memos,
-        { id: `m${Date.now()}`, text, completed: false, createdAt: iso() },
-      ];
-      emitMemos();
-    },
-    toggleMemo: (id: string) => {
-      memos = memos.map((m) =>
-        m.id === id
-          ? { ...m, completed: !m.completed, completedAt: m.completed ? undefined : iso() }
-          : m,
-      );
-      emitMemos();
-    },
-    deleteMemo: (id: string) => {
-      memos = memos.filter((m) => m.id !== id);
-      emitMemos();
-    },
+    acknowledgeApproval: () => {},
     clearEvents: () => {},
     removeSession: () => {},
-    switchToApp: (agent) => {
-      console.info("[mock] switchToApp", agent);
-      presence[agent] = { installed: true, running: true };
-      emitPresence();
-    },
+    openSession: async () => ({ opened: false }),
+    getSessionJumpKind: async () => undefined,
     panelOpened: () => {},
-    mediaControl: (action: MediaAction) => {
-      if (media.media && (action === "playpause" || action === "play" || action === "pause")) {
-        media.media = { ...media.media, playing: !media.media.playing };
-        systemListeners.forEach((cb) => cb(media));
-      }
-    },
     startWindowDrag: () => {},
     endWindowDrag: () => {},
     setHotZones: () => {},

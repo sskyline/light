@@ -1,41 +1,32 @@
-import { useState } from "react";
-import { motion, AnimatePresence, type Variants } from "framer-motion";
-import type { SessionState, AgentId, LightEvent, Memo, PresenceState, SystemState } from "../types";
-import { MediaFull } from "./MediaCard";
-
-const AGENT_LABEL: Record<AgentId, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  antigravity: "Antigravity",
-  trae: "Trae",
-};
-
-const LAUNCH_TARGETS: { agent: AgentId; label: string }[] = [
-  { agent: "antigravity", label: "Antigravity" },
-  { agent: "codex", label: "Codex" },
-  { agent: "claude-code", label: "Claude" },
-];
-
-const EVENT_TAG: Record<LightEvent["type"], string> = {
-  session_start: "start",
-  session_end: "end",
-  user_prompt: "prompt",
-  tool_use: "tool",
-  approval_request: "approve",
-  tool_result: "result",
-  stop: "stop",
-  interrupt: "cancel",
-  notification: "note",
-  error: "err",
-};
+import { ConnectionDiagnostics } from "./ConnectionDiagnostics";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
+import { AGENT_LABEL } from "../agents";
+import type { SessionState, PresenceState } from "../types";
+import { useSessionTitle } from "../hooks/useLightEvents";
+import { ActionMenu } from "./ActionMenu";
+import { TaskProgress } from "./TaskProgress";
+import { currentToolAction } from "../toolActivity";
+import { capsuleLayout, collapseTransition } from "./capsuleMotion";
 
 interface Props {
-  sessions: SessionState[];
-  memos: Memo[];
-  system: SystemState;
+  sessionsByPriority: SessionState[];
   presence: PresenceState | null;
   onClose?: () => void;
+  pickedSession: string | null | undefined;
+  onPickSession: (key: string | null) => void;
+  diagnosticsRequest: number | null;
+  onDiagnostics: () => void;
+  onBack: () => void;
 }
+
+const JUMP_LABEL = {
+  codex: "在 Codex 中打开对话",
+  "claude-desktop": "在 Claude 桌面版中打开对话",
+  iterm: "定位 iTerm2 分屏",
+  ghostty: "定位 Ghostty 分屏",
+  rex: "定位 Rex 分屏",
+};
 
 function formatDuration(fromIso?: string): string {
   if (!fromIso) return "";
@@ -48,32 +39,34 @@ function formatDuration(fromIso?: string): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${hh}:${mm}:${ss}`;
+function idleTimestamp(session: SessionState): number {
+  return Date.parse(session.turnEnd?.timestamp ?? session.lastEventAt);
 }
 
-function eventIdentity(e: LightEvent & { _key: string; _agent: AgentId }): string {
-  return [
-    e._key,
-    e.timestamp,
-    e.type,
-    e.tool ?? "",
-    e.message ?? "",
-  ].join("|");
+function idleTimeLabel(session: SessionState): string {
+  const end = session.turnEnd;
+  const elapsed = Date.now() - idleTimestamp(session);
+  if (!Number.isFinite(elapsed)) return "";
+  const minutes = Math.max(0, Math.floor(elapsed / 60000));
+  const ago = minutes === 0 ? "刚刚" : minutes < 60 ? `${minutes} 分钟前` : `${Math.floor(minutes / 60)} 小时前`;
+  switch (end?.type) {
+    case "interrupt": return `${ago}中断`;
+    case "error": return `${ago}出错`;
+    default: return ago;
+  }
 }
 
-function statusLine(a: SessionState): string {
+function statusLine(a: SessionState, expanded: boolean): string {
+  const action = expanded ? currentToolAction(a) : undefined;
   switch (a.status) {
     case "idle":
       return "空闲";
     case "working":
-      return a.currentTool ? `工作中 · ${a.currentTool}` : "工作中";
+      return action ?? "工作中";
     case "waiting":
-      return a.currentTool ? `等待审批 · ${a.currentTool}` : "等待审批";
+      return "工作中";
+    case "auto_approval_failed":
+      return "自动审批失败";
     case "done":
       return "刚完成";
     case "error":
@@ -81,209 +74,106 @@ function statusLine(a: SessionState): string {
   }
 }
 
-export function ExpandPanel({ sessions, memos, system, presence, onClose }: Props) {
-  const [draft, setDraft] = useState("");
-  const [expandedEventKey, setExpandedEventKey] = useState<string | null>(null);
+export function ExpandPanel({ sessionsByPriority, presence, onClose, pickedSession, onPickSession, diagnosticsRequest, onDiagnostics, onBack }: Props) {
+  const reduceMotion = useReducedMotion();
+  const [showIdle, setShowIdle] = useState(true);
+  const diagnosing = diagnosticsRequest !== null;
+  const listRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (diagnosing || !pickedSession) return;
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-session-key="${CSS.escape(pickedSession)}"] .session-summary`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, [pickedSession, diagnosing]);
 
-  // 探测不可用(非 macOS)或缺键时视为已安装,保持按钮可见;一个都没装就整段不渲染。
-  const launchable = LAUNCH_TARGETS.filter(({ agent }) => presence?.[agent]?.installed !== false);
+  const activeSessions = sessionsByPriority.filter((session) => session.status !== "idle");
+  const idleSessions = sessionsByPriority.filter((session) => session.status === "idle")
+    .sort((a, b) => (idleTimestamp(b) || 0) - (idleTimestamp(a) || 0));
+  const visibleSessions = showIdle ? sessionsByPriority : activeSessions;
+  const expandedKey = pickedSession === null || visibleSessions.some((session) => session.key === pickedSession)
+    ? pickedSession
+    : activeSessions[0]?.key;
 
-  const allEvents = sessions
-    .flatMap((s) => s.recent.map((e) => ({ ...e, _key: s.key, _agent: s.agent })))
-    .sort((x, y) => (x.timestamp < y.timestamp ? 1 : -1))
-    .slice(0, 14);
-
-  const visibleMemos = memos;
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const t = draft.trim();
-    if (!t) return;
-    window.light?.addMemo(t);
-    setDraft("");
-  };
+  const renderSession = (session: SessionState) => (
+    <SessionRow
+      key={session.key}
+      session={session}
+      lookupDesktop={session.agent === "claude-code" && !session.jumpTarget && presence?.["claude-code"]?.installed !== false}
+      jumpTarget={session.jumpTarget === "codex" && presence?.codex?.installed === false ? undefined : session.jumpTarget}
+      onClose={onClose}
+      expanded={expandedKey === session.key}
+      onToggle={() => onPickSession(expandedKey === session.key ? null : session.key)}
+    />
+  );
 
   return (
     <motion.div
-      className="panel"
+      className={diagnosing ? "panel diagnostics-panel" : "panel"}
+      aria-label={diagnosing ? "连接与诊断" : "会话"}
       variants={PANEL}
-      initial="hidden"
+      initial={reduceMotion ? false : "hidden"}
       animate="show"
-      exit="exit"
     >
-      <span className="glass-sheen" aria-hidden="true" />
-
-      {launchable.length > 0 && (
-        <motion.div className="section" variants={ITEM}>
-          <div className="launcher-row">
-            <AnimatePresence initial={false} mode="popLayout">
-              {launchable.map(({ agent, label }) => {
-                const running = presence?.[agent]?.running === true;
-                return (
-                  <motion.button
-                    key={agent}
-                    layout
-                    initial={{ opacity: 0, scale: 0.92 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.92 }}
-                    transition={{ duration: 0.18, ease: "easeOut" }}
-                    className="launch-btn"
-                    type="button"
-                    title={running ? `切换到 ${label}` : `打开 ${label}`}
-                    onClick={() => {
-                      window.light?.switchToApp(agent);
-                      onClose?.();
-                    }}
-                  >
-                    <span>{label}</span>
-                    <span className={`launch-dot ${running ? "on" : ""}`} aria-hidden="true" />
-                  </motion.button>
-                );
-              })}
-            </AnimatePresence>
-          </div>
-        </motion.div>
-      )}
-
-      <motion.div className="section" variants={ITEM}>
-        <div className="section-head">
-          <span>状态</span>
-        </div>
-        <div className="card">
-          {sessions.length === 0 ? (
-            <div className="empty">暂无活动会话</div>
-          ) : (
-            sessions.map((a) => (
-              <div key={a.key} className="panel-row">
-                <span className={`dot ${a.status}`} />
-                <span className="panel-name">{AGENT_LABEL[a.agent]}</span>
-                <span className="session-tag">对话 {a.seq}</span>
-                <span className="sub">{statusLine(a)}</span>
-                <span className="panel-meta">
-                  {(a.status === "working" || a.status === "waiting") && a.startedAt
-                    ? formatDuration(a.startedAt)
-                    : ""}
-                </span>
-                <button
-                  className="row-x"
-                  onClick={() => window.light?.removeSession(a.key)}
-                  title="从列表移除这个对话"
-                  aria-label="移除"
-                >
-                  ×
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </motion.div>
-
-      {system.media && system.media.title && (
-        <motion.div className="section" variants={ITEM}>
-          <div className="section-head">
-            <span>正在播放</span>
-          </div>
-          <div className="card">
-            <MediaFull media={system.media} />
-          </div>
-        </motion.div>
-      )}
-
-      <motion.div className="section" variants={ITEM}>
-        <div className="section-head">
-          <span>备忘录</span>
-          <span className="section-meta">
-            {visibleMemos.filter((m) => !m.completed).length} 待办
-          </span>
-        </div>
-        <form className="memo-input" onSubmit={onSubmit}>
-          <input
-            type="text"
-            placeholder="写点什么 · 回车添加"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            maxLength={200}
-          />
-        </form>
-        <div className="memos">
-          <AnimatePresence initial={false}>
-            {visibleMemos.map((m) => (
-              <MemoRow key={m.id} memo={m} />
-            ))}
-          </AnimatePresence>
-          {visibleMemos.length === 0 && <div className="empty">没有备忘</div>}
-        </div>
-      </motion.div>
-
-      <motion.div className="section" variants={ITEM}>
-        <div className="section-head">
-          <span>事件流</span>
-          <button
-            className="link-btn"
-            onClick={() => window.light?.clearEvents()}
-            disabled={allEvents.length === 0}
-          >
-            清空
+      {diagnosing ? <ConnectionDiagnostics request={diagnosticsRequest} onBack={onBack} /> : <>
+        <motion.div className="section-head" variants={ITEM}>
+          <h2>会话</h2>
+          <button className="link-btn diagnostics-button" type="button" onClick={onDiagnostics}
+            aria-label="连接与诊断">
+            <span className="diagnostics-hint" aria-hidden="true">连接与诊断</span>
+            <span className="sliders-icon" aria-hidden="true"><i /><i /></span>
           </button>
-        </div>
-        <div className="card">
-          <div className="events">
-            {allEvents.length === 0 ? (
-              <div className="empty">暂无事件</div>
-            ) : (
-              allEvents.map((e) => {
-                const eventKey = eventIdentity(e);
-                const expanded = expandedEventKey === eventKey;
-                return (
-                  <div className={`evt-wrap ${expanded ? "expanded" : ""}`} key={eventKey}>
-                    <button
-                      className="evt"
-                      type="button"
-                      onClick={() => setExpandedEventKey(expanded ? null : eventKey)}
-                      aria-expanded={expanded}
-                    >
-                      <span className="evt-time">{formatTime(e.timestamp)}</span>
-                      <span className="evt-tag">{EVENT_TAG[e.type]}</span>
-                      <span className="evt-text">
-                        {e.message ?? e.tool ?? AGENT_LABEL[e._agent as AgentId]}
-                      </span>
-                    </button>
-                    {expanded && (
-                      <div className="evt-detail">
-                        <DetailRow label="来源" value={AGENT_LABEL[e._agent as AgentId]} />
-                        <DetailRow label="事件" value={e.type} />
-                        <DetailRow label="工具" value={e.tool} />
-                        <DetailRow label="详情" value={e.message} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </motion.div>
+          <ActionMenu label="会话列表更多操作" action="清空进展"
+            disabled={!sessionsByPriority.some(session => session.recent.some(event =>
+              !event.approvalId || !session.unreadApprovals?.some(unread => unread.approvalId === event.approvalId)))}
+            onAction={() => window.light.clearEvents()} />
+        </motion.div>
+        <motion.div ref={listRef} className="panel-sessions" variants={ITEM} layoutScroll>
+          {activeSessions.length > 0 && <div className="card">{activeSessions.map(renderSession)}</div>}
+          {sessionsByPriority.length === 0 && <div className="empty">暂无活动会话</div>}
+          {idleSessions.length > 0 && (
+            <div className="idle-sessions">
+              <button
+                className="idle-toggle"
+                type="button"
+                aria-label={`空闲会话，${idleSessions.length} 条`}
+                aria-expanded={showIdle}
+                onClick={() => setShowIdle((expanded) => !expanded)}
+              >
+                <span>空闲</span>
+                <span className="idle-count" aria-hidden="true">· {idleSessions.length}</span>
+              </button>
+              <AnimatePresence initial={false}>
+                {showIdle && (
+                  <motion.div
+                    key="idle-list"
+                    className="collapse-clip"
+                    initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={collapseTransition(reduceMotion)}
+                  >
+                    <div className="card idle-list-inner">
+                      {idleSessions.map(renderSession)}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </motion.div>
+      </>}
     </motion.div>
   );
 }
 
-// Staggered spring reveal: the panel springs down, then each section settles
-// in just behind it. Keeps the open feel "alive" without being slow.
+// Staggered section reveal coordinated with Island's panel-shell spring.
 const PANEL: Variants = {
-  hidden: { opacity: 0, y: -10, scale: 0.965 },
+  hidden: {},
   show: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
     transition: {
-      type: "spring",
-      stiffness: 330,
-      damping: 27,
       staggerChildren: 0.05,
       delayChildren: 0.05,
     },
   },
-  exit: { opacity: 0, y: -10, scale: 0.965, transition: { duration: 0.16 } },
 };
 
 const ITEM: Variants = {
@@ -291,55 +181,130 @@ const ITEM: Variants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } },
 };
 
-function DetailRow({ label, value }: { label: string; value?: string }) {
-  if (!value) return null;
-  return (
-    <div className="evt-detail-row">
-      <span className="evt-detail-label">{label}</span>
-      <span className="evt-detail-value">{value}</span>
-    </div>
-  );
-}
-
-function MemoRow({ memo }: { memo: Memo }) {
-  const handleToggle = () => {
-    window.light?.toggleMemo(memo.id);
-    if (!memo.completed) {
-      setTimeout(() => window.light?.deleteMemo(memo.id), 1200);
-    }
-  };
+function SessionRow({
+  session,
+  jumpTarget,
+  lookupDesktop,
+  onClose,
+  expanded,
+  onToggle,
+}: {
+  session: SessionState;
+  jumpTarget?: SessionState["jumpTarget"];
+  lookupDesktop: boolean;
+  onClose?: () => void;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const progressId = useId();
+  const [jumpError, setJumpError] = useState("");
+  const [hasDesktopSession, setHasDesktopSession] = useState(false);
+  useEffect(() => {
+    if (!lookupDesktop) return;
+    let cancelled = false;
+    const lookup = async () => {
+      const kind = await window.light?.getSessionJumpKind?.(session.key).catch(() => undefined);
+      if (!cancelled) setHasDesktopSession(kind === "claude-desktop");
+      return kind;
+    };
+    // The first hook can arrive before Claude writes its desktop record.
+    let retry: ReturnType<typeof setTimeout>;
+    void lookup().then(kind => {
+      if (!kind && !cancelled) retry = setTimeout(lookup, 5500);
+    });
+    return () => { cancelled = true; clearTimeout(retry); };
+  }, [lookupDesktop, session.key, session.lastEventAt]);
+  const reduceMotion = useReducedMotion();
+  const sessionTitle = useSessionTitle(session.key);
+  const title = sessionTitle?.trim() || session.lastPrompt?.trim().split(/[\r\n]/, 1)[0] || undefined;
+  const agentName = AGENT_LABEL[session.agent];
+  const target = jumpTarget ?? (lookupDesktop && hasDesktopSession ? "claude-desktop" : undefined);
+  const jumpLabel = target && JUMP_LABEL[target];
+  async function openSession() {
+    setJumpError("");
+    const { opened, message } = await window.light.openSession(session.key).catch(() => ({ opened: false, message: "" }));
+    if (opened) onClose?.();
+    else setJumpError(message || "打开失败，请检查应用、分屏或系统自动化权限。");
+  }
+  const idle = session.status === "idle";
+  const timeLabel = session.status === "working" || session.status === "waiting"
+    ? formatDuration(session.startedAt)
+    : session.status === "idle" ? idleTimeLabel(session) : "";
 
   return (
     <motion.div
-      className={`memo ${memo.completed ? "completed" : ""}`}
-      layout
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: memo.completed ? 0.45 : 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0, x: 40 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
+      className={`session-card ${session.status}`}
+      data-session-key={session.key}
+      layout={reduceMotion ? false : "position"}
+      transition={{ layout: capsuleLayout }}
     >
-      <button
-        className={`memo-check ${memo.completed ? "on" : ""}`}
-        onClick={handleToggle}
-        aria-label={memo.completed ? "uncheck" : "complete"}
-      >
-        {memo.completed && (
-          <svg viewBox="0 0 24 24" width="11" height="11">
-            <path
-              d="M5 12.5l4.2 4.2L19 7"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      <div className="panel-row">
+        <button
+          className="session-summary"
+          type="button"
+          aria-label={`${expanded ? "收起" : "展开"}进展 · ${title ?? agentName}${session.unreadApprovals?.length ? " · 有未读的自动审批失败" : ""}`}
+          aria-expanded={expanded}
+          aria-controls={progressId}
+          onClick={onToggle}
+        >
+          <span className="panel-title">
+            {!!session.unreadApprovals?.length && <span className="approval-dot" aria-hidden="true" data-hint="有未读的自动审批失败" />}
+            {title && <span className="panel-name" data-hint={title} data-truncated-only>{title}</span>}
+            {(idle || !title) && <span className="session-agent">{agentName}</span>}
+          </span>
+          {!idle && <span className="panel-session-detail">
+            {title && <span className="session-agent">{agentName}</span>}
+            <span className={`panel-status ${session.status}`}>
+              {(session.status === "done" || session.status === "error" || session.status === "auto_approval_failed") && (
+                <span className={`status-mark ${session.status}`} aria-hidden="true" />
+              )}
+              {statusLine(session, expanded)}
+            </span>
+            {timeLabel && <span className="session-duration">{timeLabel}</span>}
+          </span>}
+          {idle && timeLabel && (
+            <span className="panel-meta" data-hint={session.status === "idle" && !session.turnEnd ? "最后活动时间" : undefined}>
+              {timeLabel}
+            </span>
+          )}
+          <span className="session-chevron" aria-hidden="true" />
+        </button>
+        <div className="session-actions">
+          {expanded && <ActionMenu label={`${title ?? agentName}的更多操作`} action="从列表移除"
+            onAction={() => window.light.removeSession(session.key)} />}
+          {jumpLabel && (
+            <button
+              className="session-jump"
+              type="button"
+              aria-label={`${jumpLabel} · ${title ?? agentName}`}
+              data-hint={jumpLabel}
+              onClick={openSession}
+            >
+              <span className="jump-mark" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+      {jumpError && <div className="session-jump-error" role="status">{jumpError}</div>}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            id={progressId}
+            key="progress"
+            className="collapse-clip session-progress-clip"
+            initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={collapseTransition(reduceMotion)}
+          >
+            <TaskProgress
+              recent={session.recent}
+              unread={session.unreadApprovals}
+              onRead={id => window.light.acknowledgeApproval(session.key, id)}
             />
-          </svg>
+          </motion.div>
         )}
-      </button>
-      <span className="memo-text">{memo.text}</span>
-      <button className="memo-x" onClick={() => window.light?.deleteMemo(memo.id)} title="删除">
-        ×
-      </button>
+      </AnimatePresence>
     </motion.div>
   );
 }

@@ -32,7 +32,7 @@ npm run dist
 - **免管理员**：默认按"当前用户"安装到 `%LocalAppData%\Programs\Light`，不弹 UAC。
 - 开始菜单快捷方式会自动创建；桌面和开机自启快捷方式可在安装时勾选。
 - 升级时自动结束正在运行的 `Light.exe`，覆盖安装不报错。
-- 卸载时自动关闭程序；用户数据（备忘录）在 `%AppData%\light`，卸载不动它。
+- 卸载时自动关闭程序，保留 `%AppData%\light` 中的用户数据。
 
 ## 目录约定（stage 脚本生成）
 
@@ -44,9 +44,8 @@ release/Light/
 │   ├── package.json
 │   ├── dist/              ← 渲染层（Vite 产物）
 │   ├── dist-electron/     ← 主进程 + preload
-│   ├── bridge/            ← 媒体/通知 PowerShell 脚本
 │   └── icon.ico           ← 托盘/窗口图标
-├── hooks/                 ← Claude Code / Codex 接入脚本
+├── hooks/                 ← Claude Code / Codex / Antigravity 接入脚本
 └── light.ico
 ```
 

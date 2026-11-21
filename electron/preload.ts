@@ -1,3 +1,4 @@
+import type { PanelLayout } from "./panelPlacement";
 import { contextBridge, ipcRenderer } from "electron";
 
 interface HotZone {
@@ -6,6 +7,14 @@ interface HotZone {
   w: number;
   h: number;
 }
+
+// A tray command can arrive before React mounts its listener.
+let openDiagnostics: (() => void) | undefined;
+let pendingDiagnostics = false;
+ipcRenderer.on("light:open-diagnostics", () => {
+  if (openDiagnostics) openDiagnostics();
+  else pendingDiagnostics = true;
+});
 
 contextBridge.exposeInMainWorld("light", {
   onEvent: (cb: (evt: unknown) => void) => {
@@ -17,16 +26,6 @@ contextBridge.exposeInMainWorld("light", {
     const listener = (_: unknown, state: unknown) => cb(state);
     ipcRenderer.on("light:state", listener);
     return () => ipcRenderer.off("light:state", listener);
-  },
-  onMemos: (cb: (memos: unknown) => void) => {
-    const listener = (_: unknown, memos: unknown) => cb(memos);
-    ipcRenderer.on("light:memos", listener);
-    return () => ipcRenderer.off("light:memos", listener);
-  },
-  onSystem: (cb: (state: unknown) => void) => {
-    const listener = (_: unknown, state: unknown) => cb(state);
-    ipcRenderer.on("light:system", listener);
-    return () => ipcRenderer.off("light:system", listener);
   },
   onPresence: (cb: (state: unknown) => void) => {
     const listener = (_: unknown, state: unknown) => cb(state);
@@ -43,18 +42,31 @@ contextBridge.exposeInMainWorld("light", {
     ipcRenderer.on("light:hover", listener);
     return () => ipcRenderer.off("light:hover", listener);
   },
+  onPanelLayout: (cb: (layout: PanelLayout) => void) => {
+    const listener = (_: unknown, layout: PanelLayout) => cb(layout);
+    ipcRenderer.on("light:panel-layout", listener);
+    ipcRenderer.send("light:request-panel-layout");
+    return () => ipcRenderer.off("light:panel-layout", listener);
+  },
+  onOpenDiagnostics: (cb: () => void) => {
+    openDiagnostics = cb;
+    if (pendingDiagnostics) {
+      pendingDiagnostics = false;
+      cb();
+    }
+    return () => { openDiagnostics = undefined; };
+  },
+  installHooks: () => ipcRenderer.invoke("light:install-hooks"),
+  getDiagnostics: () => ipcRenderer.invoke("light:get-diagnostics"),
   getState: () => ipcRenderer.invoke("light:get-state"),
-  getMemos: () => ipcRenderer.invoke("light:get-memos"),
-  getSystem: () => ipcRenderer.invoke("light:get-system"),
+  getSessionTitle: (key: string) => ipcRenderer.invoke("light:get-session-title", key),
+  openSession: (key: string) => ipcRenderer.invoke("light:open-session", key),
+  getSessionJumpKind: (key: string) => ipcRenderer.invoke("light:get-session-jump-kind", key),
   getPresence: () => ipcRenderer.invoke("light:get-presence"),
-  addMemo: (text: string) => ipcRenderer.send("light:add-memo", text),
-  toggleMemo: (id: string) => ipcRenderer.send("light:toggle-memo", id),
-  deleteMemo: (id: string) => ipcRenderer.send("light:delete-memo", id),
+  acknowledgeApproval: (key: string, id: number) => ipcRenderer.send("light:acknowledge-approval", key, id),
   clearEvents: () => ipcRenderer.send("light:clear-events"),
   removeSession: (key: string) => ipcRenderer.send("light:remove-session", key),
-  switchToApp: (agent: string) => ipcRenderer.send("light:switch-app", agent),
   panelOpened: () => ipcRenderer.send("light:panel-opened"),
-  mediaControl: (action: string) => ipcRenderer.send("light:media-control", action),
   startWindowDrag: () => ipcRenderer.send("light:start-window-drag"),
   endWindowDrag: () => ipcRenderer.send("light:end-window-drag"),
   setHotZones: (zones: HotZone[]) => ipcRenderer.send("light:set-hot-zones", zones),

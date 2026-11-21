@@ -10,10 +10,12 @@ import test from "node:test";
 import stateModule from "../dist-electron/state.js";
 import serverModule from "../dist-electron/server.js";
 import installerModule from "../dist-electron/hookInstaller.js";
+import titlesModule from "../dist-electron/antigravityTitles.js";
 
 const { StateStore } = stateModule;
 const { startServer } = serverModule;
 const { installHooks, installAntigravityHooks } = installerModule;
+const { readAntigravitySessionTitle } = titlesModule;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const adapter = path.join(root, "hooks/antigravity-hook.mjs");
 const conversationId = "a1111111-1111-4111-8111-111111111111";
@@ -92,6 +94,34 @@ test("real HTTP event flow preserves per-turn timing, task recovery and backgrou
   assert.equal(session().status, "error");
 });
 
+test("PostToolUse retains one compact target per operation and preserves errors", async (t) => {
+  const { store, port } = await fixture(t);
+  const examples = [
+    ["view_file", { AbsolutePath: "/work/src/[id].tsx" }, "[id].tsx"],
+    ["replace_file_content", { TargetFile: "/work/main.ts", ReplacementContent: "PRIVATE" }, "main.ts"],
+    ["multi_replace_file_content", { TargetFile: "C:\\work\\page.ts" }, "page.ts"],
+    ["write_to_file", { TargetFile: "/work/设置.ts", CodeContent: "PRIVATE" }, "设置.ts"],
+    ["run_command", { CommandLine: "npm test --token PRIVATE" }, "npm test"],
+    ["run_command", { CommandLine: "git diff -- PRIVATE" }, "git diff"],
+    ["run_command", { CommandLine: "curl -H PRIVATE" }, "curl"],
+    ["run_command", { CommandLine: {} }, undefined],
+    ["view_file", {}, undefined],
+    ["unknown_tool", { TargetFile: "/work/PRIVATE" }, undefined],
+  ];
+  for (const [name, args, expected] of examples) {
+    await invoke("PostToolUse", { conversationId, toolCall: { name, args } }, port);
+    const event = store.getState().sessions[0].recent[0];
+    assert.equal(event.type, "tool_result");
+    assert.equal(event.toolTarget, expected);
+    assert.ok(!JSON.stringify(event).includes("PRIVATE"));
+  }
+  await invoke("PostToolUse", { conversationId, toolCall: { name: "run_command", args: { CommandLine: "npm test" } }, error: "exit status 1" }, port);
+  const recent = store.getState().sessions[0].recent;
+  assert.equal(recent.length, examples.length + 1);
+  assert.equal(recent[0].toolTarget, "npm test");
+  assert.equal(recent[0].message, "工具失败：exit status 1");
+});
+
 test("conversation IDs isolate sessions and Stop recognizes the actual ERROR enum", async (t) => {
   const { store, port } = await fixture(t);
   await invoke("PreInvocation", { conversationId }, port); // proto default zero
@@ -101,6 +131,39 @@ test("conversation IDs isolate sessions and Stop recognizes the actual ERROR enu
   assert.equal(sessions.length, 2);
   assert.equal(sessions.find((s) => s.sessionId.startsWith("a111")).status, "error");
   assert.equal(sessions.find((s) => s.sessionId.startsWith("b222")).status, "working");
+});
+
+test("Antigravity titles match the full conversation ID across local clients", async (t) => {
+  const { store, port } = await fixture(t);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "light-agy-title-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const secondId = "a1111111-1111-4111-8111-111111111112";
+  await invoke("PreInvocation", { conversationId, lastUserInput: "这条问题不应成为标题" }, port);
+  await invoke("PreInvocation", { conversationId: secondId }, port);
+  await invoke("Stop", { conversationId, fullyIdle: true }, port);
+
+  const sessions = store.getState().sessions;
+  assert.equal(sessions.length, 2);
+  const first = sessions.find((session) => session.status === "done");
+  const second = sessions.find((session) => session.status === "working");
+  assert.equal(first.lastPrompt, undefined);
+  assert.deepEqual(store.getTitleSession(first.key), { agent: "antigravity", id: conversationId });
+  assert.deepEqual(store.getTitleSession(second.key), { agent: "antigravity", id: secondId });
+  assert.equal(await readAntigravitySessionTitle(conversationId, home), null);
+
+  const writeAnnotation = (client, id, contents) => {
+    const dir = path.join(home, client, "annotations");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, id + ".pbtxt"), contents);
+  };
+  const title = '检查 "构建" 流程';
+  writeAnnotation("antigravity", conversationId, `title: ${JSON.stringify(title)} last_modified_time:{seconds:123}`);
+  writeAnnotation("antigravity", secondId, 'title: "incomplete');
+  writeAnnotation("antigravity-ide", secondId, 'title: "IDE 会话"');
+  assert.equal(await readAntigravitySessionTitle(conversationId, home), title);
+  assert.equal(await readAntigravitySessionTitle(secondId, home), "IDE 会话");
+  assert.equal(await readAntigravitySessionTitle("../not-a-uuid", home), null);
 });
 
 test("malformed or unidentified input and unsupported events cannot create phantom sessions", async (t) => {
@@ -194,7 +257,7 @@ test("packaged app migration updates generated paths for all agents and preserve
   const before = new Map([claudePath, codexPath, configPath].map((p) => [p, fs.readFileSync(p, "utf8")]));
   const installed = { ...options, execPath: "/Applications/Light.app/Contents/MacOS/Light" };
   const result = installHooks(installed);
-  for (const [name, count] of [["claude", 7], ["codex", 6], ["antigravity", 3]]) {
+  for (const [name, count] of [["claude", 8], ["codex", 6], ["antigravity", 3]]) {
     const target = result[name];
     assert.equal(target.error, undefined);
     assert.equal(target.added, 0);
@@ -215,4 +278,41 @@ test("packaged app migration updates generated paths for all agents and preserve
     assert.equal(repeat[name].changed, false);
     assert.equal(repeat[name].updated, 0);
   }
+});
+
+test("passive Antigravity errors report explicit automatic blocks without promoting tool output or manual denials", async t => {
+  const { store, port } = await fixture(t);
+  const send = (event, fields) => invoke(event, { conversationId, ...fields }, port);
+  const session = () => store.getState().sessions[0];
+  const policy = "Action blocked by Mango safety policy";
+  for (const error of ["Permission denied", "User rejected permission request", "tool call denied by pre-tool hook: user denied", "exit status 1", "stdout: " + policy, ""]) {
+    await send("PostToolUse", { error, toolCall: { name: "run_command", args: { CommandLine: policy } } });
+    assert.equal(session().status, "working");
+  }
+  await send("PostToolUse", { error: policy });
+  assert.equal(session().status, "auto_approval_failed");
+  await send("Stop", { error: policy, terminationReason: "ERROR" });
+  assert.equal(session().status, "error");
+  assert.equal(session().recent.filter(e => e.type === "auto_approval_failed").length, 1);
+  await send("PreInvocation", { invocationNum: 0 });
+  await send("Stop", { error: "the auto-run safety check did not reach a decision" });
+  assert.deepEqual(session().recent.slice(0, 2).map(e => e.type), ["error", "auto_approval_failed"]);
+});
+
+test("connection diagnostics distinguish absent, partial, disabled and malformed global hook configurations", t => {
+  const { options, configPath } = installFixture(t);
+  const read = () => Object.fromEntries(installerModule.readHookConnections(options.homeDir).map(a => [a.agent, a.status]));
+  assert.equal(read().codex, "未找到 Light Hook");
+  const installed = installHooks(options);
+  assert.equal(read().codex, "Hook 已配置");
+  const agy = JSON.parse(fs.readFileSync(configPath));
+  agy["light-antigravity"].enabled = false;
+  fs.writeFileSync(configPath, JSON.stringify(agy));
+  assert.equal(read().antigravity, "Hook 已禁用");
+  fs.writeFileSync(installed.claude.path, "{broken");
+  assert.equal(read()["claude-code"], "配置无法读取");
+  const codex = JSON.parse(fs.readFileSync(installed.codex.path));
+  delete codex.hooks.Stop;
+  fs.writeFileSync(installed.codex.path, JSON.stringify(codex));
+  assert.match(read().codex, /5\/6/);
 });

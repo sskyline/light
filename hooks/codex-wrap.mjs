@@ -4,6 +4,7 @@
 // Requires `codex` to be available on PATH.
 
 import http from "node:http";
+import { terminalSource } from "./terminal-source.mjs";
 import { spawn } from "node:child_process";
 
 const PORT = Number(process.env.LIGHT_PORT || 51789);
@@ -40,6 +41,7 @@ function post(payload) {
 async function notify(type, extra = {}) {
   await post({
     agent: "codex",
+    terminal: terminalSource(),
     type,
     timestamp: new Date().toISOString(),
     ...extra,

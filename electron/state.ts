@@ -1,13 +1,17 @@
 import { EventEmitter } from "node:events";
+import { resolveJumpTarget, SESSION_UUID, type JumpTarget } from "./sessionNavigation";
+export { SESSION_UUID } from "./sessionNavigation";
 
 export type AgentId = "claude-code" | "codex" | "antigravity" | "trae";
-export type AgentStatus = "idle" | "working" | "waiting" | "done" | "error";
+type TitledAgent = "claude-code" | "codex" | "antigravity";
+export type AgentStatus = "idle" | "working" | "waiting" | "auto_approval_failed" | "done" | "error";
 export type EventType =
   | "session_start"
   | "session_end"
   | "user_prompt"
   | "tool_use"
   | "approval_request"
+  | "auto_approval_failed"
   | "tool_result"
   | "stop"
   | "interrupt"
@@ -15,6 +19,9 @@ export type EventType =
   | "error";
 
 export interface LightEvent {
+  toolTarget?: string;
+  toolCallId?: string;
+  approvalId?: number;
   agent: AgentId;
   type: EventType;
   sessionId?: string;
@@ -24,21 +31,32 @@ export interface LightEvent {
 }
 
 export interface SessionState {
+  jumpTarget?: JumpTarget["kind"];
   key: string;
   agent: AgentId;
   sessionId: string;
-  seq: number; // human-friendly per-agent index ("第 N 个对话")
   status: AgentStatus;
   currentTool?: string;
   lastPrompt?: string;
   lastEventAt: string;
   startedAt?: string;
+  turnEnd?: { type: "stop" | "interrupt" | "error"; timestamp: string };
+  unreadApprovals?: LightEvent[];
   recent: LightEvent[];
 }
 
 export interface AppState {
   sessions: SessionState[];
 }
+
+const STATUS_PRIORITY: Record<AgentStatus, number> = {
+  error: -1,
+  auto_approval_failed: 0,
+  waiting: 1,
+  working: 1,
+  done: 2,
+  idle: 3,
+};
 
 const DONE_LINGER_MS = 8_000;
 const ERROR_LINGER_MS = 5_000;
@@ -49,7 +67,7 @@ const STALE_WORKING_MS = 4 * 60_000;
 // Approval requests should not keep an abandoned session at the top forever.
 // A later tool event can still move the session back to working as usual.
 const STALE_WAITING_MS = 60_000;
-const IDLE_GC_MS = 30 * 60_000; // drop idle sessions after 30 min of no activity
+const IDLE_GC_MS = 60 * 60_000; // Drop idle sessions one hour after their last event.
 const RECENT_CAP = 30;
 export const STATE_PUBLISH_INTERVAL_MS = 750;
 
@@ -60,6 +78,7 @@ const VALID_TYPES = new Set<EventType>([
   "user_prompt",
   "tool_use",
   "approval_request",
+  "auto_approval_failed",
   "tool_result",
   "stop",
   "interrupt",
@@ -72,6 +91,10 @@ export function isValidAgent(x: unknown): x is AgentId {
 }
 export function isValidType(x: unknown): x is EventType {
   return typeof x === "string" && VALID_TYPES.has(x as EventType);
+}
+
+function hasSessionTitles(agent?: AgentId): agent is TitledAgent {
+  return agent === "claude-code" || agent === "codex" || agent === "antigravity";
 }
 
 function truncate(s: string | undefined, max = 200): string | undefined {
@@ -93,10 +116,10 @@ function shortSessionId(raw: string | undefined): string {
 }
 
 export class StateStore extends EventEmitter {
-  private sessions = new Map<string, SessionState>();
+  private sessions = new Map<string, SessionState & { jump?: JumpTarget }>();
+  private approvalSequence = 0;
   private timers = new Map<string, NodeJS.Timeout>();
   private gcTimers = new Map<string, NodeJS.Timeout>();
-  private seqCounters = new Map<AgentId, number>();
   private publishTimer?: NodeJS.Timeout;
   private lastPublishedAt?: number;
 
@@ -117,33 +140,48 @@ export class StateStore extends EventEmitter {
     }
   }
 
-  private nextSeq(agent: AgentId): number {
-    const n = (this.seqCounters.get(agent) ?? 0) + 1;
-    this.seqCounters.set(agent, n);
-    return n;
-  }
-
   getState(): AppState {
+    // Stable sort keeps the Map's insertion order within each priority.
     const arr = Array.from(this.sessions.values()).sort(
-      (a, b) => (a.lastEventAt < b.lastEventAt ? 1 : -1),
+      (a, b) => STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status],
     );
-    return JSON.parse(JSON.stringify({ sessions: arr }));
+    const sessions = arr.map(({ jump, ...session }) => ({ ...session, jumpTarget: jump?.kind }));
+    return JSON.parse(JSON.stringify({ sessions }));
   }
 
-  ingest(rawEvent: LightEvent): LightEvent {
+  getJumpTarget(key: string): JumpTarget | undefined {
+    return this.sessions.get(key)?.jump;
+  }
+
+  getTitleSession(key: string): { agent: TitledAgent; id: string } | undefined {
+    const agent = this.sessions.get(key)?.agent;
+    if (!hasSessionTitles(agent)) return undefined;
+    const id = key.slice(agent.length + 2);
+    return SESSION_UUID.test(id) ? { agent, id } : undefined;
+  }
+
+  ingest(rawEvent: LightEvent & { terminal?: unknown; autoApprovalFailed?: boolean }): LightEvent {
     const sessionId = shortSessionId(rawEvent.sessionId);
     const evt: LightEvent = {
       agent: rawEvent.agent,
       type: rawEvent.type,
       sessionId,
+      toolCallId: typeof rawEvent.toolCallId === "string" && rawEvent.toolCallId.length <= 256
+        ? rawEvent.toolCallId || undefined : undefined,
       tool: typeof rawEvent.tool === "string" ? truncate(rawEvent.tool, 80) : undefined,
+      toolTarget: typeof rawEvent.toolTarget === "string" ? truncate(rawEvent.toolTarget, 160) : undefined,
       message: typeof rawEvent.message === "string" ? truncate(rawEvent.message, 400) : undefined,
       timestamp: rawEvent.timestamp ?? new Date().toISOString(),
     };
 
-    const key = keyOf(evt.agent, sessionId);
+    // Use the full UUID for title lookups and to avoid prefix collisions.
+    const rawSessionId = rawEvent.sessionId;
+    const titleSessionId = hasSessionTitles(evt.agent) && rawSessionId && SESSION_UUID.test(rawSessionId)
+      ? rawSessionId.toLowerCase()
+      : undefined;
+    const key = keyOf(evt.agent, titleSessionId ?? sessionId);
 
-    // session_end removes the session entirely (the agent window closed).
+    const prev = this.sessions.get(key);
     if (evt.type === "session_end") {
       const t = this.timers.get(key);
       if (t) clearTimeout(t);
@@ -151,27 +189,41 @@ export class StateStore extends EventEmitter {
       if (g) clearTimeout(g);
       this.timers.delete(key);
       this.gcTimers.delete(key);
-      this.sessions.delete(key);
+      if (prev?.unreadApprovals?.length) {
+        prev.status = "idle";
+        prev.currentTool = undefined;
+        prev.startedAt = undefined;
+        prev.jump = undefined;
+      } else {
+        this.sessions.delete(key);
+      }
       this.publishState(true);
       this.emit("event", evt);
       return evt;
     }
 
-    const prev = this.sessions.get(key);
     const recent = prev?.recent ?? [];
-    const newRecent = [evt, ...recent].slice(0, RECENT_CAP);
+    // Stop can be the only Antigravity hook that carries the policy failure.
+    // Preserve the end of the turn and its cause together in one snapshot.
+    const finalDenial = evt.agent === "antigravity" && evt.type === "error" && rawEvent.autoApprovalFailed &&
+      !(recent[0]?.type === "auto_approval_failed" && recent[0].message === evt.message);
+    const denial = finalDenial ? { ...evt, type: "auto_approval_failed" as const } :
+      evt.type === "auto_approval_failed" ? evt : undefined;
+    if (denial) denial.approvalId = ++this.approvalSequence;
+    const history = finalDenial && denial ? [denial, ...recent] : recent;
+    const newRecent = evt.type === "approval_request" ? recent : [evt, ...history].slice(0, RECENT_CAP);
 
     let next: SessionState = {
       key,
       agent: evt.agent,
       sessionId,
-      seq: prev?.seq ?? this.nextSeq(evt.agent),
       status: prev?.status ?? "idle",
       currentTool: prev?.currentTool,
       lastPrompt: prev?.lastPrompt,
       lastEventAt: evt.timestamp,
       startedAt: prev?.startedAt,
       recent: newRecent,
+      unreadApprovals: denial ? [denial, ...(prev?.unreadApprovals ?? [])] : prev?.unreadApprovals,
     };
 
     switch (evt.type) {
@@ -197,6 +249,10 @@ export class StateStore extends EventEmitter {
         next.currentTool = evt.tool ?? evt.message;
         if (!next.startedAt) next.startedAt = evt.timestamp;
         break;
+      case "auto_approval_failed":
+        next.status = "auto_approval_failed";
+        next.currentTool = undefined;
+        break;
       case "tool_result":
         next.status = "working";
         next.currentTool = undefined;
@@ -204,42 +260,81 @@ export class StateStore extends EventEmitter {
         break;
       case "stop":
         next.status = "done";
+        next.turnEnd = { type: evt.type, timestamp: evt.timestamp };
         next.currentTool = undefined;
         break;
       case "interrupt":
         next.status = "idle";
+        next.turnEnd = { type: evt.type, timestamp: evt.timestamp };
         next.currentTool = undefined;
         next.startedAt = undefined;
         break;
       case "error":
         next.status = "error";
+        next.turnEnd = { type: evt.type, timestamp: evt.timestamp };
         next.currentTool = undefined;
         break;
       case "notification":
+        next.turnEnd = prev?.turnEnd;
         break;
     }
 
-    this.sessions.set(key, next);
+    let jump: JumpTarget | undefined;
+    if (process.platform === "darwin") {
+      const previous = rawEvent.terminal === undefined && evt.type !== "session_start" ? prev?.jump : undefined;
+      jump = previous ?? resolveJumpTarget(evt.agent, titleSessionId, rawEvent.terminal);
+    }
+    this.sessions.set(key, { ...next, jump });
     this.scheduleAutoReset(key);
     this.scheduleGc(key);
     this.publishState(
-      evt.type === "approval_request" || evt.type === "error" ||
+      evt.type === "approval_request" || evt.type === "auto_approval_failed" || evt.type === "error" ||
       evt.type === "stop" || evt.type === "interrupt" || evt.type === "user_prompt",
     );
     this.emit("event", evt);
     return evt;
   }
 
-  clearEvents(): void {
-    for (const s of this.sessions.values()) {
-      s.recent = [];
+  recordCodexDenial(thread: string, reason?: string): void {
+    const session = this.sessions.get(keyOf("codex", thread.toLowerCase()));
+    if (!session) return;
+    const event: LightEvent = { agent: "codex", sessionId: thread, type: "auto_approval_failed",
+      timestamp: new Date().toISOString(), message: truncate(reason, 400) };
+    if (session.status === "idle" || session.turnEnd) {
+      // A late disk write belongs in the completed turn, without restarting it.
+      event.timestamp = session.turnEnd?.timestamp ?? session.lastEventAt;
+      event.sessionId = session.sessionId;
+      event.approvalId = ++this.approvalSequence;
+      session.unreadApprovals = [event, ...(session.unreadApprovals ?? [])];
+      const end = session.recent.findIndex(e => e.type === session.turnEnd?.type && e.timestamp === event.timestamp);
+      session.recent.splice(end + 1, 0, event);
+      session.recent = session.recent.slice(0, RECENT_CAP);
+      this.publishState(true);
+      return;
+    }
+    this.ingest(event);
+  }
+
+  acknowledgeApproval(key: string, id: number): void {
+    const session = this.sessions.get(key);
+    const pending = session?.unreadApprovals;
+    if (!session || !pending?.some(event => event.approvalId === id)) return;
+    session.unreadApprovals = pending.filter(event => event.approvalId !== id);
+    if (!session.unreadApprovals.length) {
+      delete session.unreadApprovals;
+      if (!this.gcTimers.has(key)) this.scheduleGc(key);
     }
     this.publishState(true);
   }
 
-  // Manually drop a single session from the island (user housekeeping).
-  // If that agent window is still alive and fires another hook later, the
-  // session simply reappears with a fresh seq — nothing breaks.
+  clearEvents(): void {
+    for (const s of this.sessions.values()) {
+      s.recent = (s.unreadApprovals ?? []).slice(0, RECENT_CAP);
+    }
+    this.publishState(true);
+  }
+
+  // Remove a session. A later hook event can add it back.
   removeSession(key: string): void {
     const t = this.timers.get(key);
     if (t) clearTimeout(t);
@@ -274,7 +369,7 @@ export class StateStore extends EventEmitter {
     if (cur.status === "done") delay = DONE_LINGER_MS;
     else if (cur.status === "error") delay = ERROR_LINGER_MS;
     else if (cur.status === "working") delay = STALE_WORKING_MS;
-    else if (cur.status === "waiting") delay = STALE_WAITING_MS;
+    else if (cur.status === "waiting" || cur.status === "auto_approval_failed") delay = STALE_WAITING_MS;
     else return;
 
     const timer = setTimeout(() => {
@@ -284,6 +379,7 @@ export class StateStore extends EventEmitter {
         c.status === "done" ||
         c.status === "error" ||
         c.status === "working" ||
+        c.status === "auto_approval_failed" ||
         c.status === "waiting"
       ) {
         c.status = "idle";
@@ -301,9 +397,9 @@ export class StateStore extends EventEmitter {
     const t = setTimeout(() => {
       const cur = this.sessions.get(key);
       if (!cur) return;
-      if (cur.status === "idle") {
+      this.gcTimers.delete(key);
+      if (cur.status === "idle" && !cur.unreadApprovals?.length) {
         this.sessions.delete(key);
-        this.gcTimers.delete(key);
         this.timers.delete(key);
         this.publishState(true);
       }

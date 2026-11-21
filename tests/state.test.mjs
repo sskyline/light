@@ -55,6 +55,35 @@ test("continuous output cannot postpone refreshes indefinitely", (t) => {
   assert.equal(states.at(-1).sessions[0].recent[0].message, "result-30");
 });
 
+test("concurrent sessions keep their display order until their priority changes", (t) => {
+  const { store } = setup(t);
+  const send = (agent, sessionId, type) => {
+    t.mock.timers.tick(10);
+    store.ingest({ agent, sessionId, type, timestamp: new Date().toISOString() });
+  };
+  const order = () => store.getState().sessions.map((session) => session.sessionId);
+
+  send("codex", "first", "user_prompt");
+  send("claude-code", "second", "user_prompt");
+  send("codex", "third", "user_prompt");
+  for (const [agent, id, type] of [
+    ["claude-code", "second", "tool_use"],
+    ["codex", "third", "approval_request"],
+    ["codex", "first", "tool_result"],
+    ["codex", "third", "tool_use"],
+  ]) {
+    send(agent, id, type);
+    assert.deepEqual(order(), ["first", "second", "third"]);
+  }
+  send("codex", "third", "error");
+  assert.deepEqual(order(), ["third", "first", "second"]);
+  send("codex", "third", "tool_use");
+  send("codex", "first", "stop");
+  assert.deepEqual(order(), ["second", "third", "first"]);
+  send("claude-code", "second", "session_end");
+  assert.deepEqual(order(), ["third", "first"]);
+});
+
 for (const [type, status] of [
   ["approval_request", "waiting"],
   ["error", "error"],
@@ -130,6 +159,26 @@ test("a shared batch includes every session and preserves the existing history c
   assert.ok(states[1].sessions.every((session) => session.recent.length === 30));
 });
 
+test("idle sessions remember when the turn ended until another turn starts", (t) => {
+  const { store, ingest } = setup(t);
+  const session = () => store.getState().sessions[0];
+  for (const type of ["stop", "interrupt", "error"]) {
+    ingest("user_prompt");
+    assert.equal(session().turnEnd, undefined);
+    ingest(type);
+    const endedAt = new Date().toISOString();
+    t.mock.timers.tick(8_000);
+    assert.equal(session().status, "idle");
+    ingest("notification");
+    store.clearEvents();
+    assert.deepEqual(session().turnEnd, { type, timestamp: endedAt });
+  }
+  ingest("tool_use");
+  t.mock.timers.tick(4 * 60_000);
+  assert.equal(session().status, "idle");
+  assert.equal(session().turnEnd, undefined);
+});
+
 test("session end and clearAll cancel pending publication without restoring stale data", (t) => {
   const { store, states, ingest } = setup(t);
   ingest("tool_use");
@@ -147,4 +196,48 @@ test("session end and clearAll cancel pending publication without restoring stal
   const count = states.length;
   t.mock.timers.tick(INTERVAL * 2);
   assert.equal(states.length, count);
+});
+
+test("only confirmed automatic denials appear in progress and a later tool can continue the turn", (t) => {
+  const { store, ingest } = setup(t);
+  ingest("user_prompt");
+  ingest("approval_request");
+  const snapshot = () => store.getState().sessions[0];
+  assert.deepEqual(snapshot().recent.map(event => event.type), ["user_prompt"]);
+  ingest("auto_approval_failed", "Classifier unavailable");
+  assert.equal(snapshot().status, "auto_approval_failed");
+  assert.equal(snapshot().recent[0].message, "Classifier unavailable");
+  assert.equal(snapshot().turnEnd, undefined);
+  ingest("notification");
+  assert.equal(snapshot().status, "auto_approval_failed");
+  ingest("tool_use");
+  assert.equal(snapshot().status, "working");
+  assert.ok(snapshot().recent.some(event => event.type === "auto_approval_failed"));
+});
+
+test("unread denials survive later turns, cleared history, session end and idle expiry until each reason is opened", (t) => {
+  const { store, ingest } = setup(t);
+  const session = () => store.getState().sessions[0];
+  ingest("approval_request");
+  assert.equal(session().unreadApprovals, undefined);
+  ingest("auto_approval_failed", "First");
+  ingest("auto_approval_failed", "Second");
+  const [second, first] = session().unreadApprovals;
+  assert.notEqual(first.approvalId, second.approvalId);
+  ingest("user_prompt");
+  for (let i = 0; i < 35; i++) ingest("tool_use");
+  assert.ok(session().recent.every(e => !e.approvalId));
+  assert.equal(session().unreadApprovals.length, 2);
+  store.clearEvents();
+  ingest("stop");
+  t.mock.timers.tick(60 * 60_000);
+  assert.equal(session().status, "idle");
+  ingest("session_end");
+  store.acknowledgeApproval(session().key, first.approvalId);
+  store.acknowledgeApproval(session().key, first.approvalId);
+  assert.deepEqual(session().unreadApprovals, [second]);
+  store.acknowledgeApproval(session().key, second.approvalId);
+  assert.equal(session().unreadApprovals, undefined);
+  t.mock.timers.tick(60 * 60_000);
+  assert.equal(session(), undefined);
 });

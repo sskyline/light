@@ -32,6 +32,3 @@ desktop.ini
 
 # Personal launch copy — not part of the OSS product
 发布文案.md
-
-# Local notification-debug helpers — not part of the product
-bridge/diag*.ps1

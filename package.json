@@ -1,6 +1,6 @@
 {
   "name": "light",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": true,
   "description": "桌面状态胶囊 · 实时显示 Claude Code、Codex 与 Antigravity 的工作状态",
   "author": "Light",
@@ -28,7 +28,6 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "bridge/**/*",
       "hooks/**/*",
       "installer/light.icns",
       "installer/tray-icon-macTemplate*.png",

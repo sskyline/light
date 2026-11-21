@@ -58,6 +58,7 @@ const CLAUDE_SPECS: HookSpec[] = [
   { event: "UserPromptSubmit", arg: "user_prompt" },
   { event: "PreToolUse", arg: "tool_use", matcher: "*" },
   { event: "PermissionRequest", arg: "approval_request", matcher: "*" },
+  { event: "PermissionDenied", arg: "auto_approval_failed", matcher: "*" },
   { event: "PostToolUse", arg: "tool_result", matcher: "*" },
   { event: "Stop", arg: "stop" },
 ];
@@ -114,6 +115,7 @@ export function installAntigravityHooks(options: InstallHooksOptions): TargetRes
         return { ...result, error: `${ANTIGRAVITY_HOOK_NAME}.${event} 不是数组，未修改` };
       }
     }
+    copyHookScript(options.appPath, options.userDataPath, "terminal-source.mjs");
     const scriptPath = copyHookScript(options.appPath, options.userDataPath, "antigravity-hook.mjs");
     for (const event of ANTIGRAVITY_EVENTS) {
       const command = buildCommand(options.execPath, scriptPath, event);
@@ -325,8 +327,40 @@ function installTarget(
   return { target, path: filePath, changed: true, added, updated, skipped, backupPath };
 }
 
+export function readHookConnections(home?: string) {
+  const claudeDir = (!home && process.env.CLAUDE_CONFIG_DIR) || path.join(home ?? os.homedir(), ".claude");
+  const codexDir = (!home && process.env.CODEX_HOME) || path.join(home ?? os.homedir(), ".codex");
+  const targets = [
+    { agent: "claude-code", name: "Claude Code", file: path.join(claudeDir, "settings.json"), events: CLAUDE_SPECS.map(s => s.event) },
+    { agent: "codex", name: "Codex", file: path.join(codexDir, "hooks.json"), events: CODEX_SPECS.map(s => s.event) },
+    { agent: "antigravity", name: "Antigravity", file: path.join(home ?? os.homedir(), ".gemini", "config", "hooks.json"), events: ANTIGRAVITY_EVENTS },
+  ] as const;
+  return targets.map(({ agent, name, file, events }) => {
+    const { config, error } = readJsonConfig(file);
+    let status: string;
+    if (error) status = "配置无法读取";
+    else {
+      const antigravity = agent === "antigravity";
+      const enabled = Object.fromEntries(Object.entries(config).filter(([, entry]) => isRecord(entry) && entry.enabled !== false));
+      const count = (activeOnly: boolean) => events.filter(event => {
+        if (antigravity) return findAntigravityHooks(activeOnly ? enabled : config, event).length > 0;
+        if (activeOnly && config.disableAllHooks === true) return false;
+        const stem = agent === "codex" ? "codex-hook" : "claude-hook";
+        return [".mjs", ".cmd", ".sh"].some(ext => findLightHooks(config.hooks?.[event], stem + ext).length > 0);
+      }).length;
+      const active = count(true);
+      status = active === events.length ? "Hook 已配置" : active ? `部分已配置（${active}/${events.length}）` :
+        count(false) ? "Hook 已禁用" : "未找到 Light Hook";
+    }
+    const prefix = (home ?? os.homedir()) + path.sep;
+    const configPath = file.startsWith(prefix) ? "~/" + file.slice(prefix.length).split(path.sep).join("/") : file;
+    return { agent, name, status, configPath, configured: status === "Hook 已配置" };
+  });
+}
+
 export function installHooks(options: InstallHooksOptions): InstallHooksResult {
   const homeDir = options.homeDir ?? os.homedir();
+  copyHookScript(options.appPath, options.userDataPath, "terminal-source.mjs");
   const claudeScript = copyHookScript(options.appPath, options.userDataPath, "claude-hook.mjs");
   const codexScript = copyHookScript(options.appPath, options.userDataPath, "codex-hook.mjs");
 
@@ -354,7 +388,7 @@ export function installHooks(options: InstallHooksOptions): InstallHooksResult {
 
 export function formatInstallHooksResult(result: InstallHooksResult): string {
   const lines = [
-    "已安全合并 Hooks",
+    "Hook 配置明细",
     "补齐缺失事件，并更新安装器生成的旧执行路径；自定义命令和其他 hook 保持不变。",
     "",
     formatTargetResult(result.claude),

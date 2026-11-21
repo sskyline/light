@@ -5,6 +5,7 @@
 | [产品定义](product.md) | 产品目标、当前功能、状态模型、验收标准与路线图 |
 | [Hooks 接入与排障](hooks.md) | Claude Code、Codex、Antigravity 的手动配置、日志和包装脚本 |
 | [Windows 打包与安装器](windows-packaging.md) | Windows staging 与 Inno Setup 发布流程 |
+| [1.1.0 发布说明](releases/1.1.0.md) | 会话跳转、工具活动摘要、自动审批失败提醒与连接诊断 |
 | [1.0.9 发布说明](releases/1.0.9.md) | Codex 按 Esc 取消后立即回到空闲，记录取消事件 |
 | [1.0.8 发布说明](releases/1.0.8.md) | Codex 后台建议请求过滤与工具事件刷新优化 |
 | [1.0.7 发布说明](releases/1.0.7.md) | 应用安装识别、运行状态圆点与按钮样式优化 |

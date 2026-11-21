@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
-import { motion } from "framer-motion";
-import type { AgentId, AgentStatus, SessionState } from "../types";
+import { forwardRef, type ReactNode } from "react";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
+import type { AgentId, SessionState } from "../types";
+import { capsuleContent, capsuleLayout } from "./capsuleMotion";
 
 const AGENT_SHORT: Record<AgentId, string> = {
   "claude-code": "Claude",
@@ -8,41 +9,10 @@ const AGENT_SHORT: Record<AgentId, string> = {
   antigravity: "Antigravity",
   trae: "Trae",
 };
-const AGENT_FULL: Record<AgentId, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  antigravity: "Antigravity",
-  trae: "Trae",
-};
 
 interface Props {
   agent: AgentId;
-  sessions: SessionState[];
-  expanded: boolean;
-}
-
-function aggregateStatus(sessions: SessionState[]): AgentStatus {
-  const has = (s: AgentStatus) => sessions.some((x) => x.status === s);
-  if (has("error")) return "error";
-  if (has("waiting")) return "waiting";
-  if (has("working")) return "working";
-  if (has("done")) return "done";
-  return "idle";
-}
-
-function pickActive(sessions: SessionState[]): SessionState | undefined {
-  const order = (s: SessionState) => {
-    if (s.status === "waiting") return 0;
-    if (s.status === "working") return 1;
-    if (s.status === "done") return 2;
-    if (s.status === "error") return 3;
-    return 4;
-  };
-  return [...sessions].sort((a, b) => {
-    const o = order(a) - order(b);
-    if (o !== 0) return o;
-    return a.lastEventAt < b.lastEventAt ? 1 : -1;
-  })[0];
+  sessionsByPriority: SessionState[];
 }
 
 function elapsed(fromIso?: string): string {
@@ -55,96 +25,88 @@ function elapsed(fromIso?: string): string {
   return m < 60 ? `${m}m${s % 60}s` : `${Math.floor(m / 60)}h${m % 60}m`;
 }
 
-function Check() {
-  return (
-    <svg className="check" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-      <motion.path
-        d="M5 12.5l4.2 4.2L19 7"
-        initial={{ pathLength: 0 }}
-        animate={{ pathLength: 1 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-      />
-    </svg>
-  );
-}
+export const AgentPill = forwardRef<HTMLButtonElement, Props>(function AgentPill({ agent, sessionsByPriority }, ref) {
+  const present = useIsPresent();
+  const reduceMotion = useReducedMotion();
+  const active = sessionsByPriority[0];
+  const status = active?.status ?? "idle";
 
-export function AgentPill({ agent, sessions, expanded }: Props) {
-  const status = aggregateStatus(sessions);
-  const active = pickActive(sessions);
-  const count = sessions.length;
-  const workingCount = sessions.filter((s) => s.status === "working").length;
-  const waitingCount = sessions.filter((s) => s.status === "waiting").length;
+  const count = sessionsByPriority.length;
+  const busyCount = sessionsByPriority.filter((s) => s.status === "working" || s.status === "waiting" || s.status === "auto_approval_failed").length;
 
-  const tool = active?.currentTool;
   const timeText =
-    status === "working" && active?.startedAt ? elapsed(active.startedAt) : "";
+    (status === "working" || status === "waiting") && active?.startedAt ? elapsed(active.startedAt) : "";
 
-  const countBadge =
-    count > 1
-      ? waitingCount > 0
-        ? `×${count} · ${waitingCount}待批`
-        : workingCount > 0
-          ? `×${count} · ${workingCount}忙`
-          : `×${count}`
-      : null;
-  const seqTag = count === 1 && active ? `对话 ${active.seq}` : null;
+  const countBadge = count > 1 ? `×${count}${busyCount > 0 && busyCount < count ? ` · ${busyCount}忙` : ""}` : null;
 
-  // The chip text is derived purely from `status`, so it can never lag behind
-  // the dot colour (no more "green dot but still Bash · 42s"). The element is
-  // keyed by `status` alone — while a task ticks, only the inner time text
-  // updates in place, so the chip never remounts or re-animates every second.
+  // Key the chip by status so updates to the timer don't replay its animation.
   let chip: ReactNode;
   if (status === "done") {
-    chip = (
-      <>
-        <Check />
-        完成
-      </>
-    );
+    chip = "完成";
   } else if (status === "error") {
     chip = "出错";
-  } else if (status === "waiting") {
-    chip = expanded && tool ? `等待审批 · ${tool}` : "等待审批";
-  } else if (status === "working") {
-    if (expanded && active?.lastPrompt) {
-      chip = active.lastPrompt;
-    } else {
-      chip = (
-        <>
-          {tool || "工作中"}
-          {timeText && (
-            <>
-              <span className="chip-sep">·</span>
-              <span className="chip-time">{timeText}</span>
-            </>
-          )}
-        </>
-      );
-    }
+  } else if (status === "auto_approval_failed") {
+    chip = "自动审批失败";
+  } else if (status === "working" || status === "waiting") {
+    chip = (
+      <>
+        <span className="chip-status">工作中</span>
+        {timeText && (
+          <>
+            <span className="chip-sep">·</span>
+            <span className="chip-time">{timeText}</span>
+          </>
+        )}
+      </>
+    );
   } else {
     chip = "空闲";
   }
 
   return (
-    <div className={`agent state-${status}`}>
-      <span className={`dot ${status}`} />
-      <motion.span layout="position" className="label">
-        {expanded ? AGENT_FULL[agent] : AGENT_SHORT[agent]}
+    <motion.button
+      type="button"
+      tabIndex={present ? 0 : -1}
+      ref={ref}
+      className={`agent state-${status}`}
+      data-agent={present ? agent : undefined}
+      aria-hidden={!present || undefined}
+      layout={reduceMotion ? false : "position"}
+      {...capsuleContent(reduceMotion)}
+      transition={{ layout: capsuleLayout }}
+    >
+      <AnimatePresence initial={false}>
+        {status !== "working" && status !== "waiting" && (
+          <motion.span
+            key="mark"
+            layout={reduceMotion ? false : "position"}
+            className={`status-mark ${status}`}
+            aria-hidden="true"
+            initial={reduceMotion ? false : { opacity: 0, width: 0, marginRight: -8 }}
+            animate={{ opacity: 1, width: 10, marginRight: 0 }}
+            exit={{ opacity: 0, width: 0, marginRight: -8 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          />
+        )}
+      </AnimatePresence>
+      <motion.span layout={reduceMotion ? false : "position"} className="label">
+        {AGENT_SHORT[agent]}
       </motion.span>
 
       {countBadge && <span className="count-badge">{countBadge}</span>}
-      {expanded && seqTag && <span className="session-tag">{seqTag}</span>}
 
-      <motion.span
-        key={status}
-        layout="position"
-        className={`state-chip ${status}`}
-        initial={{ opacity: 0, y: -3 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-      >
-        {chip}
-      </motion.span>
-    </div>
+      <AnimatePresence initial={false}>
+        <motion.span
+          key={status}
+          layout={reduceMotion ? false : "position"}
+          className={`state-chip ${status}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: reduceMotion ? 0 : 0.14 }}
+        >
+          {chip}
+        </motion.span>
+      </AnimatePresence>
+    </motion.button>
   );
-}
+});

@@ -1,15 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import type { AgentId, AgentStatus, HotZone, Memo, PresenceState, SessionState, SystemState } from "../types";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { PanelLayout } from "../../electron/panelPlacement";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import type { AgentId, HotZone, PresenceState, SessionState } from "../types";
 import { AgentPill } from "./AgentPill";
+import { HoverHint } from "./HoverHint";
 import { ExpandPanel } from "./ExpandPanel";
-import { MediaCompact } from "./MediaCard";
+import { capsuleContent, capsuleLayout } from "./capsuleMotion";
 
 interface Props {
   sessions: SessionState[];
-  memos: Memo[];
-  system: SystemState;
   presence: PresenceState | null;
 }
 
@@ -32,21 +32,38 @@ function groupByAgent(sessions: SessionState[]): Map<AgentId, SessionState[]> {
   return map;
 }
 
-// The single state the *whole* capsule reacts to (halo + aurora sweep). Most
-// urgent wins: an error anywhere should colour the island red even if another
-// session is happily working.
-function overallStatus(sessions: SessionState[]): AgentStatus {
-  const has = (s: AgentStatus) => sessions.some((x) => x.status === s);
-  if (has("error")) return "error";
-  if (has("waiting")) return "waiting";
-  if (has("working")) return "working";
-  if (has("done")) return "done";
-  return "idle";
+// Tighten spacing before hiding timers when several agents share the capsule.
+function fitAgentPills(island: HTMLDivElement | null, stage: HTMLDivElement | null) {
+  if (!island || !stage || island.classList.contains("minimal")) return;
+  const row = island.querySelector<HTMLElement>(".agents");
+  if (!row) return;
+  const style = getComputedStyle(island);
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+  const available = stage.clientWidth - padding - border;
+  const fits = () => row.offsetWidth <= available;
+  island.dataset.density = "full";
+  if (fits()) return;
+  island.dataset.density = "compact";
+  if (!fits()) island.dataset.density = "status";
 }
 
-export function Island({ sessions, memos, system, presence }: Props) {
+export function Island({ sessions, presence }: Props) {
+  const reduceMotion = useReducedMotion();
+  const [layout, setLayout] = useState<PanelLayout>();
+  useLayoutEffect(() => window.light?.onPanelLayout?.(setLayout), []);
   const [hover, setHover] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [panelPhase, setPanelPhase] = useState<"closed" | "open" | "closing">("closed");
+  const [pickedSession, setPickedSession] = useState<string | null>();
+  const [diagnosticsRequest, setDiagnosticsRequest] = useState<number | null>(null);
+  const [waitingForTrayHover, setWaitingForTrayHover] = useState(false);
+  const open = panelPhase === "open";
+  const closePanel = useCallback(() => {
+    for (const popup of document.querySelectorAll<HTMLElement>(".action-popup:popover-open")) {
+      popup.hidePopover();
+    }
+    setPanelPhase(phase => phase === "open" ? "closing" : phase);
+  }, []);
   const [dragging, setDragging] = useState(false);
 
   const islandRef = useRef<HTMLDivElement | null>(null);
@@ -56,16 +73,27 @@ export function Island({ sessions, memos, system, presence }: Props) {
   const lastHotZonesKeyRef = useRef("");
   const suppressNextClickRef = useRef(false);
 
+  const activeSessions = sessions.filter((session) => session.status !== "idle");
+  const hasRunningTimers = activeSessions.some((s) => (s.status === "working" || s.status === "waiting") && s.startedAt);
+  const hasIdleSessions = sessions.some((s) => s.status === "idle" && (s.recent.length > 0 || s.unreadApprovals?.length));
   const [, force] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => force((n) => n + 1), 1000);
+    if (!hasRunningTimers && !(open && hasIdleSessions)) return;
+    const intervalMs = hasRunningTimers ? 1000 : 30_000;
+    const id = setInterval(() => force((n) => n + 1), intervalMs);
     return () => clearInterval(id);
-  }, []);
+  }, [hasRunningTimers, open, hasIdleSessions]);
 
   // Close the panel when the window loses focus (user clicked another app).
   useEffect(() => {
-    return window.light?.onBlur(() => setOpen(false));
-  }, []);
+    return window.light?.onBlur(closePanel);
+  }, [closePanel]);
+
+  useEffect(() => window.light?.onOpenDiagnostics?.(() => {
+    setDiagnosticsRequest(n => (n ?? 0) + 1);
+    setWaitingForTrayHover(true);
+    setPanelPhase("open");
+  }), []);
 
   // Hover source of truth. In the real app, the main process cursor poll is
   // authoritative (DOM mouseenter/leave are unreliable under the click-through
@@ -74,27 +102,55 @@ export function Island({ sessions, memos, system, presence }: Props) {
   const bridgeDrivesHover = typeof window !== "undefined" && !!window.light?.onHover;
   useEffect(() => {
     if (!window.light?.onHover) return;
-    return window.light.onHover((over) => setHover(over));
+    return window.light.onHover(over => setHover(over));
   }, []);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setMenuOpen(false);
+      setHasSelection(false);
+      return;
+    }
+    const syncSelection = () => {
+      const sel = window.getSelection();
+      const panel = panelRef.current;
+      const active = Boolean(
+        sel && !sel.isCollapsed && sel.toString().trim().length > 0 &&
+        panel && ((sel.anchorNode && panel.contains(sel.anchorNode)) || (sel.focusNode && panel.contains(sel.focusNode))),
+      );
+      setHasSelection(active);
+    };
+    document.addEventListener("selectionchange", syncSelection);
+    return () => document.removeEventListener("selectionchange", syncSelection);
+  }, [open]);
 
   // Auto-collapse the panel a beat after the cursor leaves the island+panel
   // hot zone — the reliable replacement for "click outside to dismiss" (the
   // window never takes focus, so outside clicks can't blur it). Staying inside
-  // keeps it open; returning cancels the close.
+  // keeps it open; returning cancels the close. Pause while a menu is open or
+  // the user holds a text selection inside the panel.
   useEffect(() => {
-    if (!open || hover) return;
-    const t = setTimeout(() => setOpen(false), 1500);
+    if (hover) {
+      setWaitingForTrayHover(false);
+      return;
+    }
+    if (!open || waitingForTrayHover || menuOpen || hasSelection) return;
+    const t = setTimeout(closePanel, 1500);
     return () => clearTimeout(t);
-  }, [open, hover]);
+  }, [open, hover, waitingForTrayHover, menuOpen, hasSelection, closePanel]);
 
-  // Report island & panel rects to main process for cursor-based hover detection.
-  const reportHotZones = () => {
+  // Report island, panel & open popover rects to main process for cursor-based hover detection.
+  const reportHotZones = useCallback(() => {
     const bridge = window.light;
     if (!bridge) return;
     const zones: HotZone[] = [];
     const padding = 6;
-    const island = islandRef.current?.getBoundingClientRect();
-    if (island && island.width > 0) {
+    const islandElement = islandRef.current;
+    const island = islandElement?.getBoundingClientRect();
+    if (islandElement && island && island.width > 0) {
       zones.push({
         x: island.left - padding,
         y: island.top - padding,
@@ -111,13 +167,25 @@ export function Island({ sessions, memos, system, presence }: Props) {
         h: panel.height + padding * 2,
       });
     }
+    for (const popup of document.querySelectorAll<HTMLElement>(".action-popup:popover-open")) {
+      const rect = popup.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        zones.push({
+          x: rect.left - padding,
+          y: rect.top - padding,
+          w: rect.width + padding * 2,
+          h: rect.height + padding * 2,
+        });
+      }
+    }
     const key = zones.map((z) => `${Math.round(z.x)},${Math.round(z.y)},${Math.round(z.w)},${Math.round(z.h)}`).join("|");
     if (key === lastHotZonesKeyRef.current) return;
     lastHotZonesKeyRef.current = key;
     bridge.setHotZones(zones);
-  };
+  }, []);
 
   useLayoutEffect(() => {
+    fitAgentPills(islandRef.current, stageRef.current);
     reportHotZones();
   });
 
@@ -125,37 +193,60 @@ export function Island({ sessions, memos, system, presence }: Props) {
     const ro = new ResizeObserver(() => reportHotZones());
     if (islandRef.current) ro.observe(islandRef.current);
     if (stageRef.current) ro.observe(stageRef.current);
-    const onResize = () => reportHotZones();
+    if (panelRef.current) ro.observe(panelRef.current);
+    const onResize = () => {
+      fitAgentPills(islandRef.current, stageRef.current);
+      reportHotZones();
+    };
+    const onToggle = (event: Event) => {
+      if (event.target instanceof HTMLElement && event.target.classList.contains("action-popup")) {
+        setMenuOpen(document.querySelectorAll(".action-popup:popover-open").length > 0);
+        reportHotZones();
+      }
+    };
     window.addEventListener("resize", onResize);
-    const id = setInterval(reportHotZones, 200);
+    document.addEventListener("toggle", onToggle, true);
+    // Only poll briefly while the panel is open or animating; ResizeObserver +
+    // Framer layout completion cover steady-state idle without background wakes.
+    const id = panelPhase !== "closed" || activeSessions.length > 0
+      ? setInterval(reportHotZones, 250)
+      : undefined;
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", onResize);
-      clearInterval(id);
+      document.removeEventListener("toggle", onToggle, true);
+      if (id) clearInterval(id);
     };
-  }, []);
+  }, [panelPhase, activeSessions.length, reportHotZones]);
 
-  // Show every agent that has a live session — including idle ones, so Claude
-  // Code stays visible with its idle/working/done state. Sessions are removed
-  // on session_end (window closed) or GC'd after their idle timeout.
-  const grouped = groupByAgent(sessions);
+  const grouped = groupByAgent(activeSessions);
   const agents = AGENT_ORDER.filter((a) => grouped.has(a));
 
-  const media = system.media;
-  const musicOn = Boolean(media && media.title);
+  const isMinimal = agents.length === 0;
+  const status = activeSessions[0]?.status ?? "idle";
 
-  const hasContent = agents.length > 0 || musicOn;
-  const isMinimal = !hasContent;
-  const status = overallStatus(sessions);
-
-  const handleClick = () => {
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false;
       return;
     }
-    // 面板即将展开:让主进程补一次即时探测,徽标不依赖 15s 轮询的空档。
+    // Pointer capture can retarget the click to the island after a drag gesture.
+    const target = event.detail > 0
+      ? document.elementFromPoint(event.clientX, event.clientY)
+      : event.target;
+    const agent = target instanceof Element ? target.closest<HTMLElement>("[data-agent]")?.dataset.agent as AgentId | undefined : undefined;
+    const session = agent && grouped.get(agent)?.[0];
+    const expandedKey = pickedSession === null || sessions.some(s => s.key === pickedSession)
+      ? pickedSession : activeSessions[0]?.key;
+    if (open && (!session || expandedKey === session.key || diagnosticsRequest !== null)) {
+      closePanel();
+      return;
+    }
+    setPickedSession(session?.key);
+    setDiagnosticsRequest(null);
+    setWaitingForTrayHover(false);
     if (!open) window.light?.panelOpened?.();
-    setOpen((v) => !v);
+    setPanelPhase("open");
   };
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || !window.light?.startWindowDrag) return;
@@ -178,7 +269,7 @@ export function Island({ sessions, memos, system, presence }: Props) {
       drag.dragging = true;
       suppressNextClickRef.current = true;
       setDragging(true);
-      setOpen(false);
+      closePanel();
       window.light?.startWindowDrag?.();
     }
     e.preventDefault();
@@ -218,17 +309,19 @@ export function Island({ sessions, memos, system, presence }: Props) {
       finishAnyDrag();
     };
   }, []);
-  // Hover expands the pill and keeps the panel alive. When the main process
-  // drives hover (real app), ignore DOM enter/leave so the two can't fight
-  // (which is what left the pill stuck "expanded"). In the mock, DOM events
-  // are the only signal, so use them.
+  // In the browser mock, use DOM events for the hot zone.
   const handleEnter = bridgeDrivesHover ? undefined : () => setHover(true);
   const handleLeave = bridgeDrivesHover ? undefined : () => setHover(false);
 
-  // The island hugs its content (width:auto via .island-row) and framer's
-  // `layout` animates size changes — so there's never empty space on the right.
+  // The island hugs its content and Framer's layout animates size changes.
   return (
-    <div className="stage" ref={stageRef}>
+    <div className="stage" ref={stageRef} data-panel-above={layout?.above || undefined}
+      style={layout && {
+        left: layout.capsuleX, top: layout.capsuleY,
+        "--panel-shift": `${layout.panelShiftX}px`,
+        "--panel-width": `${layout.panelWidth}px`,
+        "--panel-max-height": `${layout.panelMaxHeight}px`,
+      } as CSSProperties}>
       <motion.div
         ref={islandRef}
         className={`island s-${status} ${isMinimal ? "minimal" : ""} ${open ? "open" : ""} ${dragging ? "dragging" : ""}`}
@@ -239,66 +332,72 @@ export function Island({ sessions, memos, system, presence }: Props) {
         onPointerCancel={finishDrag}
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
-        layout
-        whileHover={{ y: -2 }}
-        whileTap={{ scale: 0.985 }}
-        transition={{ type: "spring", stiffness: 300, damping: 26 }}
+        onLayoutAnimationComplete={reportHotZones}
+        layout={reduceMotion || dragging ? false : "size"}
+        whileTap={reduceMotion || dragging ? undefined : { scale: 0.985 }}
+        transition={{
+          type: "spring", stiffness: 300, damping: 26,
+          layout: capsuleLayout,
+        }}
       >
-        <span className="aurora" aria-hidden="true" />
-        <span className="glass-sheen" aria-hidden="true" />
-        <AnimatePresence mode="wait" initial={false}>
-          {isMinimal ? (
-            <motion.div
-              key="minimal"
-              className="agents minimal-inner"
-              layout
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <span className="dot idle" />
-              <span className="sub" style={{ opacity: hover || open ? 0.7 : 0 }}>
-                Light
-              </span>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="content"
-              className="island-row"
-              layout
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <div className="agents">
-                {agents.map((a) => (
-                  <AgentPill
-                    key={a}
-                    agent={a}
-                    sessions={grouped.get(a)!}
-                    expanded={hover || open}
-                  />
-                ))}
-              </div>
-              {musicOn && agents.length > 0 && <span className="vsep" />}
-              {musicOn && <MediaCompact media={media!} />}
-            </motion.div>
-          )}
+        <AnimatePresence initial={false}>
+          {isMinimal && <motion.span key="idle" className="idle-grip" aria-hidden="true" {...capsuleContent(reduceMotion)} />}
         </AnimatePresence>
+        {sessions.some(s => s.unreadApprovals?.length) && <span className="approval-dot capsule-approval-dot" role="img" aria-label="有未读的自动审批失败" />}
+        <motion.div className="agents" layout={reduceMotion ? false : "position"} transition={{ layout: capsuleLayout }}>
+          <AnimatePresence initial={false} mode="popLayout">
+            {agents.map((a) => (
+              <AgentPill
+                key={a}
+                agent={a}
+                sessionsByPriority={grouped.get(a)!}
+              />
+            ))}
+          </AnimatePresence>
+        </motion.div>
       </motion.div>
-      <AnimatePresence>
-        {open && (
-          <div ref={panelRef} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-            <ExpandPanel
-              sessions={sessions.filter((s) => s.status !== "idle" || s.recent.length > 0)}
-              memos={memos}
-              system={system}
-              presence={presence}
-              onClose={() => setOpen(false)}
-            />
-          </div>
-        )}
-      </AnimatePresence>
+      {open && <HoverHint key={diagnosticsRequest === null ? "sessions" : "diagnostics"} over={hover} />}
+      {panelPhase !== "closed" && (
+        <motion.div
+          className="panel-shell"
+          ref={panelRef}
+          onMouseEnter={handleEnter}
+          onMouseLeave={handleLeave}
+          initial={reduceMotion ? false : "closing"}
+          animate={panelPhase}
+          variants={{
+            open: {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              transition: reduceMotion
+                ? { duration: 0 }
+                : { type: "spring", stiffness: 330, damping: 27 },
+            },
+            closing: {
+              opacity: 0,
+              y: reduceMotion ? 0 : layout?.above ? 10 : -10,
+              scale: reduceMotion ? 1 : 0.965,
+              transition: { duration: reduceMotion ? 0 : 0.16, ease: "easeOut" },
+            },
+          }}
+          onAnimationComplete={phase => {
+            if (phase === "closing") setPanelPhase(current => current === "closing" ? "closed" : current);
+            reportHotZones();
+          }}
+        >
+          <ExpandPanel
+            pickedSession={pickedSession}
+            onPickSession={setPickedSession}
+            diagnosticsRequest={diagnosticsRequest}
+            onDiagnostics={() => setDiagnosticsRequest(0)}
+            onBack={() => setDiagnosticsRequest(null)}
+            sessionsByPriority={sessions.filter((s) => s.status !== "idle" || s.recent.length > 0 || s.unreadApprovals?.length)}
+            presence={presence}
+            onClose={closePanel}
+          />
+        </motion.div>
+      )}
     </div>
   );
 }

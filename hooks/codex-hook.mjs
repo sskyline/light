@@ -4,6 +4,7 @@
 // Example events: UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Stop, Interrupt
 
 import http from "node:http";
+import { terminalSource } from "./terminal-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -265,9 +266,12 @@ function post(payload) {
   const tool = pickTool(parsed);
   const payload = {
     agent: "codex",
+    terminal: terminalSource(),
     type,
     sessionId,
+    turnId: typeof parsed.turn_id === "string" ? parsed.turn_id : undefined,
     tool: truncate(tool, 80),
+    toolCallId: parsed?.tool_use_id ?? parsed?.call_id,
     message: buildMessage(type, HOOK_EVENT, parsed, tool),
     timestamp: new Date().toISOString(),
   };

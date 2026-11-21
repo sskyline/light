@@ -3,6 +3,7 @@
 // PreToolUse is intentionally unsupported: its response controls tool permission.
 import fs from "node:fs";
 import http from "node:http";
+import { terminalSource } from "./terminal-source.mjs";
 import os from "node:os";
 import path from "node:path";
 
@@ -17,12 +18,54 @@ function text(value, max = 400) {
   return typeof value === "string" ? value.slice(0, max) : undefined;
 }
 
+function toolTarget(tool, args) {
+  if (!args || typeof args !== "object") return;
+  switch (tool) {
+    case "run_command": {
+      if (typeof args.CommandLine !== "string") return;
+      const command = args.CommandLine.trim();
+      // Keep a short command name, without environment values, flags or shell bodies.
+      const summary = command.match(/^(?:npm|pnpm|yarn)\s+(?:run\s+[\w:.-]+|test|build|install|lint)\b/) ??
+        command.match(/^git\s+[a-z][a-z-]*\b/);
+      if (summary) return text(summary[0].replace(/\s+/g, " "), 100);
+      return command.match(/^(?:[\w./-]*\/)?([\w.-]+)(?=\s|$)/)?.[1]?.slice(0, 100);
+    }
+    case "view_file":
+    case "replace_file_content":
+    case "multi_replace_file_content":
+    case "write_to_file": {
+      const file = tool === "view_file" ? args.AbsolutePath : args.TargetFile;
+      if (typeof file !== "string" || /[\r\n\0]/.test(file)) return;
+      return text(path.win32.basename(file.trim()), 160) || undefined;
+    }
+  }
+}
+
+// Match the client's own decision/error labels only in the hook's error field.
+// A command's stdout, tool arguments, and generic permission errors are not verdicts.
+const automaticBlocks = [
+  "Action blocked by Mango safety policy",
+  "Action blocked by Remy safety policy",
+  "the auto-run safety check could not run",
+  "the auto-run safety check did not complete",
+  "the auto-run safety check is misconfigured",
+  "the auto-run safety check did not reach a decision",
+  "the auto-run safety check has no filesystem to inspect",
+];
+
+function autoReviewError(error) {
+  if (typeof error !== "string") return false;
+  const verdict = error.trim().replace(/^Encountered error in tool execution:\s*/i, "");
+  return automaticBlocks.some(label => verdict === label || verdict === label + "." || verdict.startsWith(label + ": "));
+}
+
 function eventFrom(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
   // Never merge malformed/missing conversation IDs into a shared default session.
   if (typeof payload.conversationId !== "string" || !payload.conversationId.trim()) return;
   const event = {
     agent: "antigravity",
+    terminal: terminalSource(),
     sessionId: payload.conversationId,
     timestamp: new Date().toISOString(),
   };
@@ -33,12 +76,19 @@ function eventFrom(payload) {
   } else if (hookEvent === "PostToolUse") {
     event.type = "tool_result";
     event.tool = text(payload.toolCall?.name, 80);
+    if (autoReviewError(payload.error)) {
+      event.type = "auto_approval_failed";
+      event.message = text(payload.error);
+      return event;
+    }
+    event.toolTarget = toolTarget(event.tool, payload.toolCall?.args);
     // A tool error may be recovered by the agent; only Stop marks task failure.
     event.message = payload.error
       ? text(`工具失败：${text(payload.error) || "unknown error"}`)
       : text(event.tool ? `${event.tool} completed` : "tool completed");
   } else if (hookEvent === "Stop") {
     const reason = text(payload.terminationReason);
+    if (autoReviewError(payload.error)) event.autoApprovalFailed = true;
     if (payload.error || reason?.toUpperCase() === "ERROR") {
       event.type = "error";
       event.message = text(payload.error) || reason;
@@ -107,7 +157,8 @@ async function post(event) {
 
 try {
   const raw = await readInput();
-  const event = raw ? eventFrom(JSON.parse(raw)) : undefined;
+  const payload = raw ? JSON.parse(raw) : undefined;
+  const event = eventFrom(payload);
   if (event) {
     const result = await post(event);
     // Do not log stdin, prompts, tool arguments, or the HTTP response body.
