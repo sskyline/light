@@ -6,7 +6,8 @@ import fs from "node:fs";
 import { StateStore, type AgentId, type LightEvent, type AppState } from "./state";
 import { DEFAULT_PORT, startServer } from "./server";
 import { formatInstallHooksResult, installHooks, readHookConnections } from "./hookInstaller";
-import { openJumpTarget, type JumpTarget } from "./sessionNavigation";
+import { openOrReopenJumpTarget, type JumpTarget } from "./sessionNavigation";
+import { createSessionOpenGate } from "./sessionOpenGate";
 import { PresenceWatcher, type PresenceState } from "./appPresence";
 import { CodexReviewWatcher } from "./codexReviews";
 import { readCodexThreadTitle } from "./codexTitles";
@@ -636,19 +637,16 @@ function wireIpc(): void {
       ? { kind: "claude-desktop" as const, id } : undefined);
   }
   ipcMain.handle("light:get-session-jump-kind", async (_evt, key: unknown) => (await jumpTargetFor(key))?.kind);
-  ipcMain.handle("light:open-session", async (_evt, key: unknown) => {
-    let target: JumpTarget | undefined;
-    try {
-      target = await jumpTargetFor(key, true);
-      if (!target) throw new Error("找不到这条会话的跳转目标。");
-      if (!(await openJumpTarget(target))) throw new Error("系统未能打开目标。");
-      return { opened: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "跳转失败。";
-      lastJumpFailure = { at: new Date(), target: target ? targetNames[target.kind] : "会话", reason: message };
-      return { opened: false, message };
-    }
+  const openSessionOnce = createSessionOpenGate({
+    resolveTarget: key => jumpTargetFor(key, true),
+    getResumeContext: key => store.getResumeContext(key),
+    openTarget: (target, resume, onTargetUpdated) => openOrReopenJumpTarget(target, resume, { onTargetUpdated }),
+    updateJumpTarget: (key, updated) => store.updateJumpTarget(key, updated),
+    onFailure: (target, reason) => {
+      lastJumpFailure = { at: new Date(), target: target ? targetNames[target.kind] : "会话", reason };
+    },
   });
+  ipcMain.handle("light:open-session", (_evt, key: unknown) => openSessionOnce(key));
   ipcMain.handle("light:get-diagnostics", connectionReport);
   ipcMain.handle("light:install-hooks", event => {
     if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("无法接入 Hooks");
@@ -691,6 +689,9 @@ function wireIpc(): void {
   ipcMain.on("light:remove-session", (_evt, key: string) => {
     if (typeof key === "string") store.removeSession(key);
   });
+  ipcMain.on("light:set-session-pinned", (_evt, key: unknown, pinned: unknown) => {
+    if (typeof key === "string" && typeof pinned === "boolean") store.setPinned(key, pinned);
+  });
   ipcMain.on("light:panel-opened", () => presenceWatcher?.probeNow());
   ipcMain.on("light:quit", () => app.quit());
 
@@ -703,6 +704,7 @@ function wireIpc(): void {
 }
 
 app.whenReady().then(() => {
+  store.configurePersistence(path.join(app.getPath("userData"), "pinned-sessions.json"));
   eventServer = startServer(store, DEFAULT_PORT, (thread, turn, type) => codexReviews.track(thread, turn, type),
     agent => lastReceived.set(agent, new Date()));
   eventServer.on("error", (error: NodeJS.ErrnoException) => {

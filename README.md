@@ -2,7 +2,7 @@
 
 Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Codex CLI 与 Antigravity 的生命周期 Hooks，实时显示 AI 会话的工作、完成和出错状态。普通审批静默处理，确认自动审批失败时单独提示。
 
-当前版本：`1.1.0`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[待办与路线图](docs/roadmap.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
+当前版本：`1.1.1`。详细资料统一收录在 [docs/](docs/README.md)：包括 [产品定义](docs/product.md)、[待办与路线图](docs/roadmap.md)、[Hooks 接入与排障](docs/hooks.md)和 [Windows 打包](docs/windows-packaging.md)。
 
 ## 能做什么
 
@@ -33,8 +33,8 @@ Light 是一个常驻桌面的 Electron 悬浮胶囊，通过 Claude Code、Code
 点击胶囊后可以查看：
 
 - 会话标题、状态和持续时间。展开会话可查看工具调用。出错的会话优先显示，空闲会话单独列在下方，默认展开，可手动收起
-- 空闲会话按时间从近到远排列，右侧显示距本轮结束、中断或出错的时间。尚未收到结束事件时显示距最后活动的时间
-- 点会话标题或左侧箭头可展开、收起进展。macOS 上，点会话右侧的 ↗ 按钮可回到 Codex、Claude 桌面版 Code 页里的对应本地对话，或回到 Rex、iTerm2、Ghostty 的原分屏。分屏信息需要新版 Hook，可在「连接与诊断」中重新接入 Hooks
+- 空闲会话分组中已固定的会话置顶，其余按时间从近到远排列，右侧显示距本轮结束、中断或出错的时间。悬停会话行可点击图钉固定会话（免除 1 小时自动回收与进程退出移除，并在重启 Light 后保留）
+- 点会话标题或左侧箭头可展开、收起进展。macOS 上，点会话右侧的 ↗ 按钮可回到 Codex、Claude 桌面版 Code 页里的对应本地对话，或回到 Rex、iTerm2、Ghostty 的原分屏；若原终端分屏已关闭，可在对应终端原工作目录自动新建分屏并恢复该 Claude Code / Codex 会话。分屏与目录信息需要新版 Hook，可在「连接与诊断」中重新接入 Hooks
 - 每条会话只展示最近一轮进展。优先会话默认展开，其他会话可点开查看
 - 连续的工具活动合成一条，自动审批失败单独列出。展开后显示操作摘要、事件类型和时间，点击单条可查看工具名和原始上报内容
 
@@ -97,7 +97,7 @@ Antigravity 使用 `PreInvocation`、`PostToolUse` 和 `Stop`，支持任务计�
 | 事件 | 状态变化 |
 |---|---|
 | `session_start` | 转为 `idle`，清空当前工具和任务计时 |
-| `session_end` | 立即移除对应会话 |
+| `session_end` | 未固定会话立即移除；已固定会话转为 `idle` 并保留恢复信息 |
 | `user_prompt` | 转为 `working`，记录任务摘要和开始时间 |
 | `tool_use` | 保持/转为 `working`，更新当前工具 |
 | `approval_request` | 转为 `waiting`，静默显示为工作中 |
@@ -114,7 +114,7 @@ Antigravity 使用 `PreInvocation`、`PostToolUse` 和 `Stop`，支持任务计�
 - `working` 4 分钟无新事件后转为 `idle`
 - `done` 展示 8 秒后转为 `idle`
 - `error` 展示 5 秒后转为 `idle`
-- 空闲会话在最后一次活动 1 小时后从列表回收。有未读自动审批失败时，胶囊和会话旁显示琥珀点。点开每条失败原因后消除对应未读提示，清空进展保留未读原因。退出 Light 会清空这些内存记录。
+- 未固定的空闲会话在最后一次活动 1 小时后从列表回收；已固定的会话持久保留在 `userData/pinned-sessions.json`，直到手动取消固定或从列表移除。有未读自动审批失败时，胶囊和会话旁显示琥珀点。点开每条失败原因后消除对应未读提示，清空进展保留未读原因。
 
 如果超时后又收到同一会话的新事件，状态会正常恢复。多个会话聚合展示时，状态优先级为 `error > auto_approval_failed > (working / waiting) > done > idle`。同一优先级内按会话首次接入的顺序显示。
 
@@ -221,7 +221,7 @@ light/
 
 - HTTP 服务只绑定回环地址 `127.0.0.1`，不会监听局域网或公网。
 - 应用没有遥测、账号系统或云端状态同步。
-- 会话状态和事件流仅保存在内存中，退出 Light 后清空。
+- 默认未固定的会话状态和事件流仅保存在内存中，退出 Light 后清空；仅用户主动固定的会话会写入 Electron 用户数据目录的 `pinned-sessions.json`。
 - 窗口位置保存在 Electron 用户数据目录；卸载应用通常会保留此目录。
 - 渲染层启用 `contextIsolation` 且禁用 `nodeIntegration`，只通过受限 preload API 与主进程交互。
 - `/event` 只接受受限字段并做文本截断，不执行请求中的命令文本。

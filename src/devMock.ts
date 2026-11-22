@@ -91,11 +91,30 @@ function sessionsFor(mode: Mode, t: number): SessionState[] {
       return [
         claudeSession({
           status: "working",
+          jumpTarget: "rex",
           currentTool: "Edit",
           startedAt: iso(-17000),
           lastPrompt: "重构 AgentPill 组件",
         }),
-        codexSession({ status: "done" }),
+        codexSession({ status: "done", jumpTarget: "codex" }),
+        claudeSession({
+          key: "claude-code::idle-recent",
+          sessionId: "idle-recent",
+          status: "idle",
+          jumpTarget: "ghostty",
+          lastEventAt: iso(-5 * 60_000),
+          turnEnd: { type: "stop", timestamp: iso(-5 * 60_000) },
+          lastPrompt: "核对安装器路径与签名配置",
+        }),
+        claudeSession({
+          key: "claude-code::pinned",
+          sessionId: "pinned",
+          status: "idle",
+          jumpTarget: "rex",
+          lastEventAt: iso(-38 * 60_000),
+          turnEnd: { type: "stop", timestamp: iso(-38 * 60_000) },
+          lastPrompt: "跟进空闲会话保留与恢复拉起",
+        }),
       ];
     case "cycle":
     default: {
@@ -158,7 +177,13 @@ export function installMockBridge(): void {
   };
 
   let tick = 0;
-  const buildState = (): AppState => ({ sessions: sessionsFor(mode, tick) });
+  const pinnedKeys = new Set<string>(mode === "multi" ? ["claude-code::pinned"] : []);
+  const removedKeys = new Set<string>();
+  const buildState = (): AppState => ({
+    sessions: sessionsFor(mode, tick)
+      .filter((s) => !removedKeys.has(s.key))
+      .map((s) => (pinnedKeys.has(s.key) ? { ...s, pinned: true } : s)),
+  });
 
   const emitState = () => {
     const s = buildState();
@@ -193,13 +218,24 @@ export function installMockBridge(): void {
     getSessionTitle: async (key) => {
       if (key === "codex::demo") return "整理桌面状态面板";
       if (key === "claude-code::demo") return "调整胶囊样式";
+      if (key === "claude-code::pinned") return "空闲会话保留与恢复拉起";
+      if (key === "claude-code::idle-recent") return "核对安装器路径与签名配置";
       if (key === "antigravity::demo") return "检查项目构建流程";
       return null;
     },
     getPresence: async () => ({ ...presence }),
     acknowledgeApproval: () => {},
     clearEvents: () => {},
-    removeSession: () => {},
+    removeSession: (key) => {
+      removedKeys.add(key);
+      pinnedKeys.delete(key);
+      emitState();
+    },
+    setSessionPinned: (key, pinned) => {
+      if (pinned) pinnedKeys.add(key);
+      else pinnedKeys.delete(key);
+      emitState();
+    },
     openSession: async () => ({ opened: false }),
     getSessionJumpKind: async () => undefined,
     panelOpened: () => {},

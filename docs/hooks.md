@@ -4,7 +4,7 @@ Light 通过本地 HTTP 服务（`127.0.0.1:51789`）接收状态事件。本目
 
 在「连接与诊断」中点「接入 Hooks」或「重新接入」，即可同步适配器和 `terminal-source.mjs`。手动复制脚本时，建议将 `terminal-source.mjs` 放在适配器旁边以启用终端分屏定位（若遗漏该文件，Hook 仍能正常上报状态事件，仅降级略过分屏标识；通过软链调用 `.sh` 或 `.mjs` 脚本时也会自动按真实路径查找）。
 
-在 Light 中，点会话标题或左侧箭头可以展开或收起进展。macOS 上，iTerm2 和 Ghostty 的新版 Hook 会随新事件上报可用的分屏标识。会话右侧出现 ↗ 时，点它可以回到原分屏。首次跳转到 Ghostty 时，macOS 可能请求自动化权限。
+在 Light 中，点会话标题或左侧箭头可以展开或收起进展。macOS 上，Rex、iTerm2 和 Ghostty 的新版 Hook 会随新事件上报可用的分屏标识与工作目录（`cwd`）。会话右侧出现 ↗ 时，点它可以回到原分屏；若原分屏已关闭且记录了有效的 Claude Code / Codex 会话 UUID，Light 会在对应终端自动新建分屏并在原目录执行 `claude --resume <id>` 或 `codex resume <id>` 恢复对话。首次跳转到 Ghostty 或 iTerm2 时，macOS 可能请求自动化权限。
 
 在本机 Rex 分屏中运行 Claude Code 或 Codex 时，Hook 读取 `REX_SESSION` 和 `REX_BLOCK`。Light 通过 Rex 自带的 CLI 选择对应标签页并聚焦原分屏。请在 Rex → Settings → Server 页底部的 Client Info 中启用 Remote Control，然后点 Light 会话右侧的 ↗ 按钮。嵌套 tmux、screen 或 SSH 的会话不使用外层 Rex 分屏标识。
 

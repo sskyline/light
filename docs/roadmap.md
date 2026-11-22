@@ -9,12 +9,7 @@
 
 ## 1. 下一版本重点（Next）
 
-### 1.1 空闲会话保留与关闭后重新拉起
-- **空闲会话固定 / 保留按钮**：在会话行提供「保留 / 固定」开关，开启后免受 1 小时 `IDLE_GC_MS` 自动回收和 `session_end` 直接清理的影响，让需要持续跟进的会话长驻面板。
-- **原分屏 / 窗口关闭后恢复拉起**：点击 `↗` 跳转时，若原终端分屏（Rex / Ghostty / iTerm2）或目标窗口已关闭，不再仅报错或空切，而是利用随 Hook 记录的工作目录（`cwd`）与 `sessionId`（如 `claude --resume <id>`、`codex resume <id>` 或桌面协议）在对应终端或应用中重新拉起并恢复该会话。
-- **涉及模块**：`hooks/*`（补充上报 `cwd`）、`electron/state.ts`、`electron/sessionNavigation.ts`、`src/components/ExpandPanel.tsx`。
-
-### 1.2 Subagent 生命周期与父子会话展示
+### 1.1 Subagent 生命周期与父子会话展示
 - **事件接入**：接入 `SubagentStart`、`SubagentStop` 等子代理生命周期事件，识别子代理身份与所属主会话。
 - **状态与进展隔离**：建立父子会话关联，避免后台子代理的工具调用直接混入主会话进展或误重置主会话计时；在胶囊和详情面板中清晰区分主会话与后台 Subagent 的运行状态及进展。
 - **涉及模块**：`hooks/claude-hook.mjs`、`hooks/codex-hook.mjs`、`electron/state.ts`、`src/components/ExpandPanel.tsx`、`src/components/TaskProgress.tsx`。

@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld("light", {
   acknowledgeApproval: (key: string, id: number) => ipcRenderer.send("light:acknowledge-approval", key, id),
   clearEvents: () => ipcRenderer.send("light:clear-events"),
   removeSession: (key: string) => ipcRenderer.send("light:remove-session", key),
+  setSessionPinned: (key: string, pinned: boolean) => ipcRenderer.send("light:set-session-pinned", key, pinned),
   panelOpened: () => ipcRenderer.send("light:panel-opened"),
   startWindowDrag: () => ipcRenderer.send("light:start-window-drag"),
   endWindowDrag: () => ipcRenderer.send("light:end-window-drag"),

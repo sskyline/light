@@ -64,7 +64,7 @@ export function startServer(store: StateStore, port: number = DEFAULT_PORT,
             message: body.message,
             timestamp: body.timestamp ?? new Date().toISOString(),
           };
-          const ingested = store.ingest({ ...evt, terminal: body.terminal, autoApprovalFailed: body.autoApprovalFailed === true });
+          const ingested = store.ingest({ ...evt, cwd: body.cwd, terminal: body.terminal, autoApprovalFailed: body.autoApprovalFailed === true });
           onReceived?.(evt.agent);
           if (evt.agent === "codex") onCodexHook?.(evt.sessionId, body.turnId, evt.type);
           res.statusCode = 200;

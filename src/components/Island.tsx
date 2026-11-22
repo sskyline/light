@@ -75,7 +75,7 @@ export function Island({ sessions, presence }: Props) {
 
   const activeSessions = sessions.filter((session) => session.status !== "idle");
   const hasRunningTimers = activeSessions.some((s) => (s.status === "working" || s.status === "waiting") && s.startedAt);
-  const hasIdleSessions = sessions.some((s) => s.status === "idle" && (s.recent.length > 0 || s.unreadApprovals?.length));
+  const hasIdleSessions = sessions.some((s) => s.status === "idle" && (Boolean(s.pinned) || s.recent.length > 0 || s.unreadApprovals?.length));
   const [, force] = useState(0);
   useEffect(() => {
     if (!hasRunningTimers && !(open && hasIdleSessions)) return;
@@ -392,7 +392,7 @@ export function Island({ sessions, presence }: Props) {
             diagnosticsRequest={diagnosticsRequest}
             onDiagnostics={() => setDiagnosticsRequest(0)}
             onBack={() => setDiagnosticsRequest(null)}
-            sessionsByPriority={sessions.filter((s) => s.status !== "idle" || s.recent.length > 0 || s.unreadApprovals?.length)}
+            sessionsByPriority={sessions.filter((s) => s.status !== "idle" || Boolean(s.pinned) || s.recent.length > 0 || s.unreadApprovals?.length)}
             presence={presence}
             onClose={closePanel}
           />

@@ -284,9 +284,11 @@ function post(payload) {
   }
 
   const tool = pickTool(parsed);
+  const cwd = typeof parsed?.cwd === "string" && parsed.cwd.trim() ? parsed.cwd.trim() : process.cwd();
   const terminal = await loadTerminalSource();
   const payload = {
     agent: "codex",
+    cwd,
     terminal,
     type,
     sessionId,

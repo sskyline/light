@@ -28,6 +28,13 @@ const JUMP_LABEL = {
   rex: "定位 Rex 分屏",
 };
 
+const IDLE_JUMP_LABEL = {
+  ...JUMP_LABEL,
+  iterm: "定位或恢复 iTerm2 分屏",
+  ghostty: "定位或恢复 Ghostty 分屏",
+  rex: "定位或恢复 Rex 分屏",
+};
+
 function formatDuration(fromIso?: string): string {
   if (!fromIso) return "";
   const ms = Date.now() - new Date(fromIso).getTime();
@@ -87,7 +94,7 @@ export function ExpandPanel({ sessionsByPriority, presence, onClose, pickedSessi
 
   const activeSessions = sessionsByPriority.filter((session) => session.status !== "idle");
   const idleSessions = sessionsByPriority.filter((session) => session.status === "idle")
-    .sort((a, b) => (idleTimestamp(b) || 0) - (idleTimestamp(a) || 0));
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || (idleTimestamp(b) || 0) - (idleTimestamp(a) || 0));
   const visibleSessions = showIdle ? sessionsByPriority : activeSessions;
   const expandedKey = pickedSession === null || visibleSessions.some((session) => session.key === pickedSession)
     ? pickedSession
@@ -198,6 +205,8 @@ function SessionRow({
 }) {
   const progressId = useId();
   const [jumpError, setJumpError] = useState("");
+  const [opening, setOpening] = useState(false);
+  const openingRef = useRef(false);
   const [hasDesktopSession, setHasDesktopSession] = useState(false);
   useEffect(() => {
     if (!lookupDesktop) return;
@@ -218,15 +227,23 @@ function SessionRow({
   const sessionTitle = useSessionTitle(session.key);
   const title = sessionTitle?.trim() || session.lastPrompt?.trim().split(/[\r\n]/, 1)[0] || undefined;
   const agentName = AGENT_LABEL[session.agent];
-  const target = jumpTarget ?? (lookupDesktop && hasDesktopSession ? "claude-desktop" : undefined);
-  const jumpLabel = target && JUMP_LABEL[target];
-  async function openSession() {
-    setJumpError("");
-    const { opened, message } = await window.light.openSession(session.key).catch(() => ({ opened: false, message: "" }));
-    if (opened) onClose?.();
-    else setJumpError(message || "打开失败，请检查应用、分屏或系统自动化权限。");
-  }
   const idle = session.status === "idle";
+  const target = jumpTarget ?? (lookupDesktop && hasDesktopSession ? "claude-desktop" : undefined);
+  const jumpLabel = target && (idle ? IDLE_JUMP_LABEL : JUMP_LABEL)[target];
+  async function openSession() {
+    if (openingRef.current) return;
+    openingRef.current = true;
+    setOpening(true);
+    setJumpError("");
+    try {
+      const { opened, message } = await window.light.openSession(session.key).catch(() => ({ opened: false, message: "" }));
+      if (opened) onClose?.();
+      else setJumpError(message || "打开失败，请检查应用、分屏或系统自动化权限。");
+    } finally {
+      openingRef.current = false;
+      setOpening(false);
+    }
+  }
   const timeLabel = session.status === "working" || session.status === "waiting"
     ? formatDuration(session.startedAt)
     : session.status === "idle" ? idleTimeLabel(session) : "";
@@ -272,10 +289,37 @@ function SessionRow({
         <div className="session-actions">
           {expanded && <ActionMenu label={`${title ?? agentName}的更多操作`} action="从列表移除"
             onAction={() => window.light.removeSession(session.key)} />}
+          <button
+            className={session.pinned ? "session-pin is-pinned" : "session-pin"}
+            type="button"
+            aria-pressed={Boolean(session.pinned)}
+            aria-label={`${session.pinned ? "取消固定会话" : "固定会话（免自动清理）"} · ${title ?? agentName}`}
+            data-hint={session.pinned ? "取消固定" : "固定会话"}
+            onClick={() => window.light.setSessionPinned(session.key, !session.pinned)}
+          >
+            <svg className="pin-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path
+                className="pin-head"
+                d="M4 1.75H8L7.5 4.75L9 6.25V7H3V6.25L4.5 4.75L4 1.75Z"
+                fill={session.pinned ? "currentColor" : "none"}
+                stroke="currentColor"
+                strokeWidth="1.35"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M6 7V10.5"
+                stroke="currentColor"
+                strokeWidth="1.35"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
           {jumpLabel && (
             <button
               className="session-jump"
               type="button"
+              disabled={opening}
               aria-label={`${jumpLabel} · ${title ?? agentName}`}
               data-hint={jumpLabel}
               onClick={openSession}

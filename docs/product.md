@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 产品版本 | 1.1.0 |
+| 产品版本 | 1.1.1 |
 | 文档状态 | 当前实现基线 |
-| 更新日期 | 2026-11-21 |
+| 更新日期 | 2026-11-22 |
 | 支持对象 | Claude Code、Codex CLI、Antigravity；协议层兼容 Trae |
 | 核心原则 | 一眼可见、安静常驻、本地优先 |
 
@@ -84,7 +84,7 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 
 ## 5. 功能范围
 
-| 模块 | 1.1.0 状态 | 说明 |
+| 模块 | 1.1.1 状态 | 说明 |
 |---|---|---|
 | 六态状态胶囊 | 已实现 | idle / working / waiting / auto_approval_failed / done / error |
 | Claude Code Hooks | 已实现 | 包含会话、任务、工具、审批、自动审批失败、完成事件 |
@@ -94,12 +94,13 @@ Claude Code 与 Codex 同时工作，或同一 Agent 存在多条会话。Light 
 | 多 Agent / 多会话 | 已实现 | 独立状态、聚合展示、手动移除 |
 | 任务进展与详情 | 已实现 | 每会话缓存 30 条事件。默认展开优先会话的最近一轮 |
 | 拖动、位置记忆与多屏 | 已实现 | 托盘也可选择目标显示器 |
-| 跳回会话 | 已实现 | macOS 上，点会话右侧的 ↗ 按钮可回到对应对话或终端分屏 |
+| 跳回与恢复会话 | 已实现 | macOS 上，点会话右侧的 ↗ 按钮可回到对应对话或终端分屏；若原 Rex/Ghostty/iTerm2 分屏已关闭且存在有效会话 ID，可在原终端自动新建分屏恢复该会话 |
+| 会话固定与保留 | 已实现 | 会话行支持固定（图钉），免除 1 小时自动回收与 `session_end` 移除，并持久化到 `userData/pinned-sessions.json` |
 | 目标应用安装探测 | 已实现 | macOS 探测目标桌面应用安装态，未安装时隐藏对应跳转入口；展开面板时按需刷新 |
 | macOS DMG | 已实现 | 默认未签名、未公证 |
 | Windows 安装器 | 已实现 | staging + Inno Setup 流程 |
 | Linux 安装包 | 未实现 | 仅可尝试源码运行 |
-| 会话历史持久化 | 未实现 | 当前只保存在内存中 |
+| 全量历史持久化 | 未实现 | 默认未固定会话只保存在内存中；已固定会话持久化保留 |
 
 ## 6. 功能需求
 
@@ -131,7 +132,7 @@ Light 支持六种会话状态：
 | 事件 | 处理规则 |
 |---|---|
 | `session_start` | 创建/重置会话为 `idle`，清空工具、计时和任务摘要 |
-| `session_end` | 立即删除对应会话及定时器（若有未读自动审批失败则保留为 `idle`） |
+| `session_end` | 未固定会话立即删除（若有未读自动审批失败则保留为 `idle`）；已固定会话转为 `idle` 并保留分屏与恢复上下文 |
 | `user_prompt` | 转为 `working`，更新任务摘要和开始时间 |
 | `tool_use` | 转为 `working`，更新当前工具；缺少开始时间时补记 |
 | `approval_request` | 转为 `waiting`，记录待审批工具；缺少开始时间时补记 |
@@ -150,7 +151,7 @@ Light 支持六种会话状态：
 | `working` | 4 分钟后转为 `idle` |
 | `done` | 8 秒后转为 `idle` |
 | `error` | 5 秒后转为 `idle` |
-| `idle` | 最后活动 1 小时后删除会话 |
+| `idle` | 未固定会话在最后活动 1 小时后删除；已固定会话免自动清理 |
 
 任何后续有效事件都可以重新激活已经超时的会话。超时只表示“Light 最近没有收到新证据”，不代表 Agent 一定已经停止。
 
@@ -165,7 +166,8 @@ Light 支持六种会话状态：
 
 ### 6.4 详情面板与任务进展
 
-- 会话列表在面板顶部，按状态优先级排列，展示会话标题、Agent 名称、状态与运行时长，展开后显示当前工具。空闲会话在列表下方单独分组，默认展开，可手动收起。活动和空闲会话同时存在时，两组之间显示分隔线。
+- 会话列表在面板顶部，按状态优先级排列，展示会话标题、Agent 名称、状态与运行时长，展开后显示当前工具。空闲会话在列表下方单独分组（已固定会话置顶，同组按时间从近到远排列），默认展开，可手动收起。活动和空闲会话同时存在时，两组之间显示分隔线。
+- 每条会话行右侧提供图钉固定按钮（未固定时静息隐藏、悬停/展开显现；固定后常驻暖金色高亮）。固定后的会话免除 1 小时自动回收与 `session_end` 清理，直至手动取消固定或从列表移除。
 - 每张会话卡片只展示最近一轮进展。优先会话默认展开，其他会话默认折叠。
 - 连续的工具活动合成一条，自动审批失败单独列出。展开后显示具体事件、工具与消息。
 - 每条会话在内存中最多保留最近 30 个事件。
@@ -263,6 +265,7 @@ Antigravity Hooks ─┘        127.0.0.1          │              │
   "agent": "claude-code | codex | antigravity | trae",
   "type": "session_start | session_end | user_prompt | tool_use | approval_request | auto_approval_failed | tool_result | stop | interrupt | notification | error",
   "sessionId": "optional string",
+  "cwd": "optional absolute path string",
   "tool": "optional string",
   "message": "optional string",
   "timestamp": "optional ISO 8601 string"
@@ -275,7 +278,8 @@ Antigravity Hooks ─┘        127.0.0.1          │              │
 
 | 数据 | 是否持久化 | 位置/说明 |
 |---|---|---|
-| 会话状态与事件 | 否 | 仅内存；退出 Light 后清空 |
+| 未固定会话状态与事件 | 否 | 仅内存；退出 Light 后清空 |
+| 已固定会话及恢复上下文 | 是 | Electron `userData/pinned-sessions.json`（取消固定或手动移除时清除） |
 | 窗口位置 | 是 | Electron `userData/window-position.json` |
 | Hook 配置 | 是 | Claude/Codex/Antigravity 用户配置目录与 Light `userData/hooks` |
 | Hook 调试日志 | 是，临时 | 系统临时目录中的 `light-hook.log` 等 |
@@ -333,7 +337,7 @@ Antigravity Hooks ─┘        127.0.0.1          │              │
 
 - Hook 是状态事实来源；Hook 被拒绝、进程崩溃或 CLI 改变事件格式时，Light 只能依靠超时收敛。
 - 一分钟审批超时和四分钟工作超时用于清理陈旧状态。长时间没有上报事件的任务可能提前从胶囊隐藏。
-- 会话和事件不持久化，降低了隐私与存储复杂度，但无法跨重启回看历史。
+- 默认未固定会话和事件不持久化，降低了隐私与存储复杂度；仅被用户主动固定的会话会保存在本地 `pinned-sessions.json` 中以便跨重启跟进与恢复拉起。
 - Agent 级聚合会突出最紧急状态，旧会话在超时前可能暂时覆盖新会话的普通工作状态。
 - macOS 未签名构建适合本地使用，不适合无提示公开分发。
 

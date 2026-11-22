@@ -156,11 +156,13 @@ async function postWithLog(payload) {
     /* ignore parse errors — the event still goes through */
   }
   const fields = pickFields(parsed);
+  const cwd = typeof parsed?.cwd === "string" && parsed.cwd.trim() ? parsed.cwd.trim() : process.cwd();
   const terminal = await loadTerminalSource();
   const ok = await postWithLog({
     agent: "claude-code",
     type: TYPE,
     sessionId: fields.sessionId,
+    cwd,
     terminal,
     tool: fields.tool,
     toolCallId: parsed?.tool_use_id,

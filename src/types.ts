@@ -29,6 +29,7 @@ export interface LightEvent {
 
 export interface SessionState {
   jumpTarget?: "codex" | "claude-desktop" | "iterm" | "ghostty" | "rex";
+  pinned?: boolean;
   key: string;
   agent: AgentId;
   sessionId: string;
@@ -84,6 +85,7 @@ declare global {
       acknowledgeApproval: (key: string, id: number) => void;
       clearEvents: () => void;
       removeSession: (key: string) => void;
+      setSessionPinned: (key: string, pinned: boolean) => void;
       panelOpened: () => void;
       startWindowDrag?: () => void;
       endWindowDrag?: () => void;

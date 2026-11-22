@@ -6,6 +6,7 @@
 | [待办与路线图](roadmap.md) | 唯一待办清单：下一版本重点、工程积压、远期探索与非目标 |
 | [Hooks 接入与排障](hooks.md) | Claude Code、Codex、Antigravity 的手动配置、日志和包装脚本 |
 | [Windows 打包与安装器](windows-packaging.md) | Windows staging 与 Inno Setup 发布流程 |
+| [1.1.1 发布说明](releases/1.1.1.md) | 空闲会话图钉固定持久化、终端关闭后恢复拉起与 Hook 健壮性修复 |
 | [1.1.0 发布说明](releases/1.1.0.md) | 会话跳转、工具活动摘要、自动审批失败提醒与连接诊断 |
 | [1.0.9 发布说明](releases/1.0.9.md) | Codex 按 Esc 取消后立即回到空闲，记录取消事件 |
 | [1.0.8 发布说明](releases/1.0.8.md) | Codex 后台建议请求过滤与工具事件刷新优化 |
