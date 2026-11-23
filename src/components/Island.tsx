@@ -73,9 +73,13 @@ export function Island({ sessions, presence }: Props) {
   const lastHotZonesKeyRef = useRef("");
   const suppressNextClickRef = useRef(false);
 
-  const activeSessions = sessions.filter((session) => session.status !== "idle");
+  const visibleSessions = sessions.filter((session) =>
+    session.status !== "idle" || session.pinned || session.unreadApprovals?.length ||
+    session.recent.some(event => event.type !== "session_start"),
+  );
+  const activeSessions = visibleSessions.filter((session) => session.status !== "idle");
   const hasRunningTimers = activeSessions.some((s) => (s.status === "working" || s.status === "waiting") && s.startedAt);
-  const hasIdleSessions = sessions.some((s) => s.status === "idle" && (Boolean(s.pinned) || s.recent.length > 0 || s.unreadApprovals?.length));
+  const hasIdleSessions = visibleSessions.some((s) => s.status === "idle");
   const [, force] = useState(0);
   useEffect(() => {
     if (!hasRunningTimers && !(open && hasIdleSessions)) return;
@@ -236,7 +240,7 @@ export function Island({ sessions, presence }: Props) {
       : event.target;
     const agent = target instanceof Element ? target.closest<HTMLElement>("[data-agent]")?.dataset.agent as AgentId | undefined : undefined;
     const session = agent && grouped.get(agent)?.[0];
-    const expandedKey = pickedSession === null || sessions.some(s => s.key === pickedSession)
+    const expandedKey = pickedSession === null || visibleSessions.some(s => s.key === pickedSession)
       ? pickedSession : activeSessions[0]?.key;
     if (open && (!session || expandedKey === session.key || diagnosticsRequest !== null)) {
       closePanel();
@@ -392,7 +396,7 @@ export function Island({ sessions, presence }: Props) {
             diagnosticsRequest={diagnosticsRequest}
             onDiagnostics={() => setDiagnosticsRequest(0)}
             onBack={() => setDiagnosticsRequest(null)}
-            sessionsByPriority={sessions.filter((s) => s.status !== "idle" || Boolean(s.pinned) || s.recent.length > 0 || s.unreadApprovals?.length)}
+            sessionsByPriority={visibleSessions}
             presence={presence}
             onClose={closePanel}
           />
