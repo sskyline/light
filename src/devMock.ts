@@ -159,10 +159,13 @@ function installBackdrop(): void {
   document.body.appendChild(bg);
 }
 
-export function installMockBridge(): void {
-  installBackdrop();
+export function installMockBridge({ backdrop = true, defaultMode = "cycle" }: {
+  backdrop?: boolean;
+  defaultMode?: Mode;
+} = {}): void {
+  if (backdrop) installBackdrop();
 
-  const mode = param("mock", "cycle") as Mode;
+  const mode = param("mock", defaultMode) as Mode;
 
   const stateListeners = new Set<(s: AppState) => void>();
   const eventListeners = new Set<(e: LightEvent) => void>();
