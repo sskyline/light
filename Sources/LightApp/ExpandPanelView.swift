@@ -9,7 +9,26 @@ struct ExpandPanelView: View {
     let panelWidth: CGFloat
 
     var body: some View {
-        ZStack {
+        Group {
+            if vm.showingDiagnostics {
+                DiagnosticsView(vm: vm)
+            } else {
+                sessionsContent
+            }
+        }
+        .frame(width: panelWidth)
+        .frame(maxHeight: maxHeight)
+        .fixedSize(horizontal: false, vertical: !vm.showingDiagnostics)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onChange(of: geometry.size.height) { _, _ in
+                    if !vm.showingDiagnostics { vm.onPanelContentChanged?() }
+                }
+            }
+        }
+        // AppKit resizes after layout. Keep the content against the capsule in the old frame too.
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: isAboveCapsule ? .bottom : .top)
+        .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(LightTheme.panelTint)
                 .overlay(
@@ -32,26 +51,9 @@ struct ExpandPanelView: View {
                         )
                         .padding(0.5)
                 )
-
-            if vm.showingDiagnostics {
-                DiagnosticsView(vm: vm)
-            } else {
-                sessionsContent
-            }
         }
-        .frame(width: panelWidth)
-        .frame(height: vm.showingDiagnostics ? min(452, maxHeight) : nil)
-        .frame(maxHeight: maxHeight)
-        .fixedSize(horizontal: false, vertical: !vm.showingDiagnostics)
-        .background {
-            GeometryReader { geometry in
-                Color.clear.onChange(of: geometry.size.height) { _, _ in
-                    vm.onPanelContentChanged?()
-                }
-            }
-        }
-        // AppKit resizes after layout. Keep the content against the capsule in the old frame too.
-        .frame(minHeight: 0, maxHeight: .infinity, alignment: isAboveCapsule ? .bottom : .top)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .buttonStyle(StableLabelButtonStyle())
         .environment(\.colorScheme, .dark)
     }
 
@@ -140,14 +142,13 @@ struct ExpandPanelView: View {
                             }
 
                             Button {
-                                withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
-                                    vm.showIdleSessions.toggle()
-                                }
+                                vm.showIdleSessions.toggle()
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 9, weight: .semibold))
                                         .rotationEffect(.degrees(vm.showIdleSessions ? 90 : 0))
+                                        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: vm.showIdleSessions)
                                     Text("空闲")
                                         .font(.system(size: 12, weight: .regular))
                                     Text("· \(vm.idleSessions.count)")
@@ -159,7 +160,6 @@ struct ExpandPanelView: View {
                                 .padding(.vertical, 4)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
 
                             if vm.showIdleSessions {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -202,7 +202,6 @@ private struct DiagnosticsIconButton: View {
                     Text("连接与诊断")
                         .font(.system(size: 11.5))
                         .foregroundStyle(LightTheme.text)
-                        .transition(.opacity)
                 }
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 12, weight: .medium))
@@ -211,11 +210,8 @@ private struct DiagnosticsIconButton: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .onHover { inside in
-            withAnimation(.easeInOut(duration: 0.14)) {
-                hovered = inside
-            }
+            hovered = inside
         }
         .help("连接与诊断")
     }
@@ -374,7 +370,6 @@ private struct SessionRowView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(StableLabelButtonStyle())
                 .accessibilityIdentifier("session-toggle-\(session.key)")
 
                 HStack(spacing: 0) {
@@ -408,7 +403,6 @@ private struct SessionRowView: View {
                             .frame(width: 24, height: 24)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                     .opacity(showPin ? (vm.isReadOnly ? 0.45 : 1) : 0)
                     .allowsHitTesting(showPin && !vm.isReadOnly)
                     .help(session.isPinned ? "取消固定" : "固定会话（免自动清理）")
@@ -424,7 +418,6 @@ private struct SessionRowView: View {
                                 .frame(width: 24, height: 24)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                         .disabled(opening)
                         .help(jumpLabel)
                     }
@@ -438,10 +431,14 @@ private struct SessionRowView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(message)
                     if failure.canResumeInNewTab && jumpTarget == .rex {
-                        Button("在新标签页恢复") {
+                        Button {
                             vm.openSession(session, allowUnverifiedRestore: true)
+                        } label: {
+                            Text("在新标签页恢复")
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(LightTheme.surfaceHover, in: RoundedRectangle(cornerRadius: 5))
                         }
-                        .buttonStyle(.bordered)
                     }
                 }
                 .font(.system(size: 11.5))
@@ -466,7 +463,6 @@ private struct SessionRowView: View {
 }
 
 private struct TaskProgressView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let recent: [LightEvent]
     let unread: [LightEvent]
     let onRead: (Int) -> Void
@@ -498,9 +494,7 @@ private struct TaskProgressView: View {
                         expanded: expandedEntryId == entry.id
                     ) {
                         let opening = expandedEntryId != entry.id
-                        withAnimation(reduceMotion ? nil : .smooth(duration: 0.18)) {
-                            expandedEntryId = opening ? entry.id : nil
-                        }
+                        expandedEntryId = opening ? entry.id : nil
                         if opening, let first = entry.events.first {
                             if let aid = first.approvalId {
                                 inspected = first
@@ -521,6 +515,7 @@ private struct TaskProgressView: View {
 }
 
 private struct ProgressEntryRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let entry: ProgressEntry
     let isLast: Bool
     let expanded: Bool
@@ -579,7 +574,6 @@ private struct ProgressEntryRow: View {
                         Button(action: onToggle) {
                             entryHeader(label: label, accent: accent, isActivity: isActivity, count: rows.count, event: event, canExpand: true)
                         }
-                        .buttonStyle(.plain)
                         .accessibilityIdentifier(isActivity ? "activity-group" : "progress-event")
                     } else {
                         entryHeader(label: label, accent: accent, isActivity: isActivity, count: rows.count, event: event, canExpand: false)
@@ -636,6 +630,7 @@ private struct ProgressEntryRow: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(LightTheme.textDim)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: expanded)
                     .frame(width: 8)
             } else {
                 Spacer().frame(width: 8)
@@ -647,6 +642,7 @@ private struct ProgressEntryRow: View {
 }
 
 private struct ActivityLogView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let rows: [ActivityRow]
     private var openRowIdState = SwiftUI.State<String?>(initialValue: nil)
     private var openRowId: String? {
@@ -670,9 +666,7 @@ private struct ActivityLogView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Button {
                             guard hasDetail else { return }
-                            withAnimation(.easeInOut(duration: 0.14)) {
-                                openRowId = isOpen ? nil : row.id
-                            }
+                            openRowId = isOpen ? nil : row.id
                         } label: {
                             HStack(spacing: 6) {
                                 Text(ToolActivity.activityRowLabel(row))
@@ -697,13 +691,13 @@ private struct ActivityLogView: View {
                                         .font(.system(size: 8, weight: .semibold))
                                         .foregroundStyle(LightTheme.textDim)
                                         .rotationEffect(.degrees(isOpen ? 90 : 0))
+                                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.14), value: isOpen)
                                         .frame(width: 7)
                                 }
                             }
                             .padding(.vertical, 5)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                         .accessibilityIdentifier("tool-detail")
 
                         if isOpen {
@@ -788,7 +782,6 @@ private struct DiagnosticsView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
                 .help("返回会话")
 
                 Spacer()
@@ -796,7 +789,7 @@ private struct DiagnosticsView: View {
                 Button("刷新") {
                     vm.refreshDiagnostics()
                 }
-                .buttonStyle(.plain)
+                .accessibilityIdentifier("refresh-diagnostics")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(LightTheme.textDim)
             }
@@ -904,9 +897,7 @@ private struct DiagnosticsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let outcome = vm.diagnosticsReport?.lastInstall {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.16)) {
-                            showInstallDetail.toggle()
-                        }
+                        showInstallDetail.toggle()
                     } label: {
                         HStack {
                             Text((outcome.ok ? "✓ " : "") + outcome.summary)
@@ -924,7 +915,6 @@ private struct DiagnosticsView: View {
                         .padding(.vertical, 3)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
 
                     if showInstallDetail {
                         ScrollView(.vertical) {
@@ -977,7 +967,7 @@ private struct DiagnosticsView: View {
                         .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
                 )
         }
-        .buttonStyle(.plain)
+        .opacity(vm.isInstallingHooks ? 0.55 : 1)
         .disabled(vm.isInstallingHooks)
     }
 

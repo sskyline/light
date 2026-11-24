@@ -52,7 +52,6 @@ struct CapsuleView: View {
                 .padding(.trailing, vm.hasUnreadApprovals ? 22 : 16)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.14), value: agents)
         .fixedSize()
         .background {
             GeometryReader { geometry in

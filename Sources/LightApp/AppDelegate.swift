@@ -95,6 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var panelAboveCapsule = false
     private var dropdownPanel: FloatingPanel?
     private var dropdownHostingView: NSHostingView<ExpandPanelView>?
+    private var displayedDiagnostics = false
+    private var resizeTarget: CGRect?
+    private var resizeTask: Task<Void, Never>?
 
     private var tray: NSStatusItem?
     private var menuLocation = CGPoint.zero
@@ -224,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         currentPanelWidth = placement.layout.panelWidth
 
         panelAboveCapsule = placement.layout.above
+        displayedDiagnostics = vm.showingDiagnostics
         let hosting = NSHostingView(rootView: ExpandPanelView(
             isAboveCapsule: panelAboveCapsule,
             vm: vm,
@@ -259,6 +263,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func hideDropdownPanel() {
+        resizeTask?.cancel()
+        resizeTask = nil
+        resizeTarget = nil
         removeGlobalClickMonitor()
         dropdownPanel?.orderOut(nil)
         dropdownPanel = nil
@@ -300,8 +307,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             area: area,
             preferredAbove: placement.layout.above
         )
-        if panel.frame != dropdown.frame {
-            panel.setFrame(dropdown.frame, display: true)
+        let pageChanged = displayedDiagnostics != vm.showingDiagnostics
+        displayedDiagnostics = vm.showingDiagnostics
+        let target = dropdown.frame
+        if resizeTask != nil, resizeTarget == target { return }
+        let transitioning = resizeTask != nil
+        resizeTask?.cancel()
+        resizeTask = nil
+        resizeTarget = target
+        let start = panel.frame
+        guard start != target else { return }
+        let fixedEdge = dropdown.above ? start.minY == target.minY : start.maxY == target.maxY
+        guard (pageChanged || transitioning), panel.isVisible, fixedEdge,
+              start.minX == target.minX, start.width == target.width,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            panel.setFrame(target, display: true)
+            return
+        }
+        // Resize the live window so text is laid out at its normal size on every frame.
+        let began = ProcessInfo.processInfo.systemUptime
+        resizeTask = Task { @MainActor [weak self, weak panel] in
+            while !Task.isCancelled, let panel {
+                let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / 0.15)
+                let eased = t * t * (3 - 2 * t)
+                var frame = target
+                frame.size.height = (start.height + (target.height - start.height) * eased).rounded()
+                if !dropdown.above { frame.origin.y = target.maxY - frame.height }
+                if panel.frame != frame { panel.setFrame(frame, display: true) }
+                if t >= 1 {
+                    self?.resizeTask = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(8))
+            }
         }
     }
 
@@ -534,9 +572,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: - Smoke Test
 
-    private func postSmokeMouse(_ type: NSEvent.EventType, at location: CGPoint) {
+    private func postSmokeMouse(_ type: NSEvent.EventType, at location: CGPoint, in panel: NSWindow? = nil) {
         guard let event = NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
-            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: capsulePanel.windowNumber,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: (panel ?? capsulePanel).windowNumber,
             context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else {
             fatalError("Could not create smoke-test mouse event")
         }
@@ -549,6 +587,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             if let button = smokeButton(id, in: child as AnyObject) { return button }
         }
         return nil
+    }
+
+    private func pressSmokeLabel(_ id: String, in panel: NSWindow) async {
+        guard let view = panel.contentView, let frame = smokeButton(id, in: panel)?.accessibilityFrame?() else {
+            fatalError("Smoke button missing: \(id)")
+        }
+        let rect = panel.convertFromScreen(frame)
+        let point = CGPoint(x: rect.midX, y: rect.midY)
+        // Sample the label at the leading edge, clear of timers and disclosure arrows.
+        let label = view.convert(rect, from: nil)
+        let sample = CGRect(x: label.minX, y: label.minY, width: min(48, label.width), height: label.height)
+        @MainActor func peakBrightness() -> CGFloat {
+            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: sample) else { fatalError("Smoke bitmap missing") }
+            view.cacheDisplay(in: sample, to: bitmap)
+            var peak: CGFloat = 0
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) {
+                        peak = max(peak, color.brightnessComponent * color.alphaComponent)
+                    }
+                }
+            }
+            return peak
+        }
+        let before = peakBrightness()
+        postSmokeMouse(.leftMouseDown, at: point, in: panel)
+        try? await Task.sleep(for: .milliseconds(90))
+        let pressed = peakBrightness()
+        postSmokeMouse(.leftMouseUp, at: point, in: panel)
+        guard before > 0.5, abs(before - pressed) < 0.03 else {
+            fatalError("Smoke label brightness changed for \(id): \(before) -> \(pressed)")
+        }
     }
 
     private func runSmokeSelfCheck() {
@@ -588,7 +658,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             postSmokeMouse(.leftMouseDown, at: center)
             postSmokeMouse(.leftMouseUp, at: center)
             await waitFor("normal capsule click after dragging") { vm.isPanelOpen }
+            guard let pagePanel = dropdownPanel else { fatalError("Smoke panel missing") }
+            @MainActor func checkPageResize(to height: CGFloat) async {
+                let start = pagePanel.frame.height
+                let expectedEdge = panelAboveCapsule ? pagePanel.frame.minY : pagePanel.frame.maxY
+                var sawIntermediate = false
+                await waitFor("page reaches height \(height)") {
+                    let frame = pagePanel.frame
+                    let edge = panelAboveCapsule ? frame.minY : frame.maxY
+                    guard abs(edge - expectedEdge) < 1 else { fatalError("Page resize moved the capsule-facing edge") }
+                    if min(start, height) < frame.height && frame.height < max(start, height) {
+                        sawIntermediate = true
+                    }
+                    return frame.height == height && resizeTask == nil
+                }
+                if abs(start - height) > 2 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && !sawIntermediate {
+                    fatalError("Page height changed without a transition")
+                }
+            }
+            let savedAnchor = anchor
+            guard let area = screen(at: anchor)?.visibleFrame else { fatalError("Smoke display missing") }
+            for anchorY in [savedAnchor.y, area.minY + capsuleSize.height] {
+                anchor.y = anchorY
+                placeCapsule(in: area)
+                repositionDropdownPanel()
+                let sessionsHeight = pagePanel.frame.height
+                vm.openDiagnostics()
+                await checkPageResize(to: min(452, currentPanelMaxHeight))
+                vm.backFromDiagnostics()
+                await checkPageResize(to: sessionsHeight)
+            }
             vm.closePanel()
+            anchor = savedAnchor
+            placeCapsule(in: area)
             await waitFor("panel closes after the click") { dropdownPanel == nil }
             let id = "smoke-capsule"
             vm.store.ingest(RawIncomingEvent(agent: .codex, type: .userPrompt, sessionId: id))
@@ -646,11 +748,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 dropdownPanel === panel && panel.isVisible && abs(panel.frame.height - codexHeight) < 1 &&
                 smokeButton("activity-group", in: panel) != nil
             }
-            _ = smokeButton("activity-group", in: panel)?.accessibilityPerformPress?()
+            await pressSmokeLabel("activity-group", in: panel)
             await waitFor("tool detail button") { smokeButton("tool-detail", in: panel) != nil }
             try? await Task.sleep(for: .milliseconds(220))
             let collapsedHeight = panel.frame.height
-            _ = smokeButton("tool-detail", in: panel)?.accessibilityPerformPress?()
+            await pressSmokeLabel("tool-detail", in: panel)
             await waitFor("tool detail grows its window") { panel.frame.height > collapsedHeight + 2 }
             _ = smokeButton("tool-detail", in: panel)?.accessibilityPerformPress?()
             await waitFor("tool detail shrinks its window") { abs(panel.frame.height - collapsedHeight) < 1 }
@@ -662,6 +764,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 fputs("Smoke test failed: reopen, visible=\(dropdownPanel?.isVisible == true), open=\(vm.isPanelOpen), diagnostics=\(vm.showingDiagnostics)\n", stderr)
                 exit(1)
             }
+            await pressSmokeLabel("refresh-diagnostics", in: reopened)
+            await Task.yield()
             vm.closePanel()
             await waitFor("closing releases the panel") { dropdownPanel == nil }
             vm.store.ingest(RawIncomingEvent(agent: .codex, type: .sessionEnd, sessionId: id))
