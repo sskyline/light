@@ -37,8 +37,6 @@ if [[ "${CONFIG}" == debug ]]; then
   fi
 
   echo "==> Building Swift targets (debug)..."
-  # Keep the development compiler cache separate from release builds.
-  BUILD_ARGS+=(--scratch-path "${OUT_DIR}/swiftpm")
   swift build "${BUILD_ARGS[@]}"
 else
   echo "==> Building Swift targets (${CONFIG})..."
