@@ -1,6 +1,13 @@
 import LightCore
 import SwiftUI
 
+// These labels report live status and keep their contrast while the button is pressed.
+struct StableLabelButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
 enum LightTheme {
     static let panelTint = Color(red: 24 / 255, green: 26 / 255, blue: 31 / 255, opacity: 0.90)
     static let capsule = Color(red: 23 / 255, green: 25 / 255, blue: 30 / 255, opacity: 0.84)

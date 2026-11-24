@@ -77,7 +77,6 @@ struct CapsuleView: View {
         .overlay(
             CapsuleHoverArea { inside in vm.isHoveringCapsule = inside }
         )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: vm.isHoveringCapsule)
         .frame(width: windowWidth.wrappedValue, height: 36)
         .environment(\.colorScheme, .dark)
     }
@@ -85,6 +84,7 @@ struct CapsuleView: View {
     private var capsuleBackground: some View {
         Capsule(style: .continuous)
             .fill((vm.isHoveringCapsule || vm.isPanelOpen) ? LightTheme.capsuleHover : LightTheme.capsule)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: vm.isHoveringCapsule || vm.isPanelOpen)
             .overlay(
                 Capsule(style: .continuous)
                     .fill(LightTheme.glassSheen)
@@ -171,9 +171,9 @@ private struct AgentPillView: View {
             : nil
 
         Button(action: onTap) {
-            ZStack {
+            ZStack(alignment: .leading) {
                 if !timeText.isEmpty {
-                    // Reserve a stable width for the whole row so the visible label stays centered.
+                    // Keep the agent name in place when the elapsed time gains a digit.
                     let sample = timeText.contains("h") ? "00h00m" : (timeText.contains("m") ? "00m00s" : "00s")
                     label(status: status, countBadge: countBadge, timeText: sample)
                         .hidden()
@@ -184,7 +184,7 @@ private struct AgentPillView: View {
             .frame(height: 36)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StableLabelButtonStyle())
     }
 
     private func label(status: AgentStatus, countBadge: String?, timeText: String) -> some View {

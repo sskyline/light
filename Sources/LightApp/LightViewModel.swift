@@ -324,7 +324,6 @@ final class LightViewModel: ObservableObject {
         } else {
             pickedSession = key
         }
-        onPanelContentChanged?()
     }
 
     // MARK: - Actions

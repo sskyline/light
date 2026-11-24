@@ -1,15 +1,9 @@
 import LightCore
 import SwiftUI
 
-@MainActor
-final class DropdownMotion: ObservableObject {
-    @Published var expanded = false
-    @Published var anchor = UnitPoint.top
-}
-
 struct ExpandPanelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject var motion: DropdownMotion
+    let isAboveCapsule: Bool
     @ObservedObject var vm: LightViewModel
     let maxHeight: CGFloat
     let panelWidth: CGFloat
@@ -56,8 +50,8 @@ struct ExpandPanelView: View {
                 }
             }
         }
-        .opacity(motion.expanded ? 1 : 0)
-        .scaleEffect(motion.expanded ? 1 : 0.975, anchor: motion.anchor)
+        // AppKit resizes after layout. Keep the content against the capsule in the old frame too.
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: isAboveCapsule ? .bottom : .top)
         .environment(\.colorScheme, .dark)
     }
 
@@ -76,6 +70,7 @@ struct ExpandPanelView: View {
                 Text("会话")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(LightTheme.heading)
+                    .accessibilityIdentifier("session-list-heading")
 
                 if vm.isReadOnly {
                     Text("只读")
@@ -286,6 +281,7 @@ private struct SessionRowView: View {
                             .font(.system(size: 8.5, weight: .semibold))
                             .foregroundStyle(hovered ? LightTheme.heading : LightTheme.textDim)
                             .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: expanded)
                             .frame(width: 9)
 
                         if idle {
@@ -378,7 +374,8 @@ private struct SessionRowView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(StableLabelButtonStyle())
+                .accessibilityIdentifier("session-toggle-\(session.key)")
 
                 HStack(spacing: 0) {
                     if expanded {
@@ -463,10 +460,8 @@ private struct SessionRowView: View {
                 )
                 .padding(.top, 10)
                 .padding(.leading, 14)
-                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: -3)), removal: .opacity))
             }
         }
-        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: expanded)
     }
 }
 

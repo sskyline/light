@@ -92,8 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var capsulePanel: FloatingPanel!
     private var capsuleSize = CGSize(width: 56, height: 36)
 
-    private let dropdownMotion = DropdownMotion()
-    private var dropdownTransition = 0
+    private var panelAboveCapsule = false
     private var dropdownPanel: FloatingPanel?
     private var dropdownHostingView: NSHostingView<ExpandPanelView>?
 
@@ -224,74 +223,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         currentPanelMaxHeight = placement.layout.panelMaxHeight
         currentPanelWidth = placement.layout.panelWidth
 
-        let panelView = ExpandPanelView(
-            motion: dropdownMotion,
+        panelAboveCapsule = placement.layout.above
+        let hosting = NSHostingView(rootView: ExpandPanelView(
+            isAboveCapsule: panelAboveCapsule,
             vm: vm,
             maxHeight: currentPanelMaxHeight,
             panelWidth: currentPanelWidth
+        ))
+        hosting.sizingOptions = [.intrinsicContentSize]
+        dropdownHostingView = hosting
+
+        let panel = FloatingPanel(
+            contentRect: NSRect(x: 0, y: 0, width: currentPanelWidth, height: 200),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
         )
-
-        let panel: FloatingPanel
-        if let existing = dropdownPanel, let hosting = dropdownHostingView {
-            hosting.rootView = panelView
-            panel = existing
-        } else {
-            let hosting = NSHostingView(rootView: panelView)
-            hosting.sizingOptions = [.intrinsicContentSize]
-            self.dropdownHostingView = hosting
-
-            panel = FloatingPanel(
-                contentRect: NSRect(x: 0, y: 0, width: currentPanelWidth, height: 200),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            panel.delegate = self
-            panel.onEscape = { [weak self] in self?.vm.closePanel() }
-            panel.contentView = hosting
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = true
-            panel.level = .screenSaver
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-            panel.hidesOnDeactivate = false
-            panel.animationBehavior = .none
-            dropdownMotion.expanded = false
-            self.dropdownPanel = panel
-        }
+        panel.delegate = self
+        panel.onEscape = { [weak self] in self?.vm.closePanel() }
+        panel.contentView = hosting
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.animationBehavior = .none
+        dropdownPanel = panel
 
         repositionDropdownPanel()
         panel.displayIfNeeded()
-        panel.ignoresMouseEvents = false
         panel.orderFrontRegardless()
         panel.makeKey()
-        animateDropdown(panel, opening: true)
         installGlobalClickMonitor()
     }
 
     private func hideDropdownPanel() {
         removeGlobalClickMonitor()
-        guard let panel = dropdownPanel else { return }
-        panel.ignoresMouseEvents = true
-        animateDropdown(panel, opening: false)
-    }
-
-    private func animateDropdown(_ panel: FloatingPanel, opening: Bool) {
-        dropdownTransition += 1
-        let transition = dropdownTransition
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let animation: Animation = opening
-            ? .smooth(duration: 0.24)
-            : .easeOut(duration: 0.14)
-        withAnimation(reduceMotion ? nil : animation, completionCriteria: .removed) {
-            dropdownMotion.expanded = opening
-        } completion: { [weak self, weak panel] in
-            guard let self, let panel, !opening, transition == self.dropdownTransition,
-                  self.dropdownPanel === panel, !self.vm.isPanelOpen else { return }
-            panel.orderOut(nil)
-            self.dropdownPanel = nil
-            self.dropdownHostingView = nil
-        }
+        dropdownPanel?.orderOut(nil)
+        dropdownPanel = nil
+        dropdownHostingView = nil
     }
 
     private func scheduleDropdownResize() {
@@ -309,11 +280,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let placement = computeCapsulePlacement(anchor: anchor, area: area, capsuleSize: capsuleSize)
         let newMaxHeight = placement.layout.panelMaxHeight
         let newWidth = placement.layout.panelWidth
-        if newMaxHeight != currentPanelMaxHeight || newWidth != currentPanelWidth {
+        if newMaxHeight != currentPanelMaxHeight || newWidth != currentPanelWidth || panelAboveCapsule != placement.layout.above {
+            panelAboveCapsule = placement.layout.above
             currentPanelMaxHeight = newMaxHeight
             currentPanelWidth = newWidth
             hosting.rootView = ExpandPanelView(
-                motion: dropdownMotion,
+                isAboveCapsule: panelAboveCapsule,
                 vm: vm,
                 maxHeight: currentPanelMaxHeight,
                 panelWidth: currentPanelWidth
@@ -328,9 +300,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             area: area,
             preferredAbove: placement.layout.above
         )
-        let anchorX = (capsulePanel.frame.midX - dropdown.frame.minX) / dropdown.frame.width
-        let pivot = UnitPoint(x: min(1, max(0, anchorX)), y: dropdown.above ? 1 : 0)
-        if dropdownMotion.anchor != pivot { dropdownMotion.anchor = pivot }
         if panel.frame != dropdown.frame {
             panel.setFrame(dropdown.frame, display: true)
         }
@@ -643,6 +612,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
             guard let panel = dropdownPanel else { fatalError("Smoke panel missing") }
             await waitFor("tool activity group") { smokeButton("activity-group", in: panel) != nil }
+            guard let codexKey = vm.expandedSessionKey,
+                  let claudeKey = vm.activeSessions.first(where: { $0.agent == .claudeCode })?.key else {
+                fatalError("Smoke sessions missing")
+            }
+            let codexHeight = panel.frame.height
+            // Hold the old window height to inspect the frame before AppKit resizes.
+            try? await Task.sleep(for: .milliseconds(260))
+            @MainActor func headingY() -> CGFloat? {
+                smokeButton("session-list-heading", in: panel)?.accessibilityFrame?().midY
+            }
+            guard let initialHeadingY = headingY() else { fatalError("Smoke heading missing") }
+            let resumeResize = vm.onPanelContentChanged
+            vm.onPanelContentChanged = nil
+            _ = smokeButton("session-toggle-\(codexKey)", in: panel)?.accessibilityPerformPress?()
+            await waitFor("collapse details before window resize") {
+                vm.expandedSessionKey == nil && smokeButton("activity-group", in: panel) == nil
+            }
+            panel.contentView?.layoutSubtreeIfNeeded()
+            guard let collapsedHeadingY = headingY(), abs(collapsedHeadingY - initialHeadingY) < 1,
+                  panel.frame.height == codexHeight else {
+                fatalError("Session heading moved before the window resized: \(initialHeadingY) -> \(String(describing: headingY()))")
+            }
+            vm.onPanelContentChanged = resumeResize
+            _ = smokeButton("session-toggle-\(claudeKey)", in: panel)?.accessibilityPerformPress?()
+            resumeResize?()
+            await waitFor("switch to shorter session details") {
+                vm.expandedSessionKey == claudeKey && dropdownPanel === panel && panel.isVisible &&
+                panel.frame.height < codexHeight && smokeButton("activity-group", in: panel) == nil
+            }
+            _ = smokeButton("session-toggle-\(codexKey)", in: panel)?.accessibilityPerformPress?()
+            await waitFor("restore longer session details") {
+                dropdownPanel === panel && panel.isVisible && abs(panel.frame.height - codexHeight) < 1 &&
+                smokeButton("activity-group", in: panel) != nil
+            }
             _ = smokeButton("activity-group", in: panel)?.accessibilityPerformPress?()
             await waitFor("tool detail button") { smokeButton("tool-detail", in: panel) != nil }
             try? await Task.sleep(for: .milliseconds(220))
@@ -653,21 +656,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             await waitFor("tool detail shrinks its window") { abs(panel.frame.height - collapsedHeight) < 1 }
             try? await Task.sleep(for: .milliseconds(350))
             vm.closePanel()
-            try? await Task.sleep(for: .milliseconds(45))
-            let closingPanel = dropdownPanel
             vm.openDiagnostics()
-            try? await Task.sleep(for: .milliseconds(250))
             guard let reopened = dropdownPanel, reopened.isVisible, !reopened.ignoresMouseEvents,
-                  dropdownMotion.expanded, vm.showingDiagnostics else {
-                fputs("Smoke test failed: reopen, visible=\(dropdownPanel?.isVisible == true), open=\(vm.isPanelOpen), expanded=\(dropdownMotion.expanded), diagnostics=\(vm.showingDiagnostics)\n", stderr)
-                exit(1)
-            }
-            if let closingPanel, reopened !== closingPanel {
-                fputs("Smoke test failed: interrupted close replaced the panel\n", stderr)
+                  vm.showingDiagnostics else {
+                fputs("Smoke test failed: reopen, visible=\(dropdownPanel?.isVisible == true), open=\(vm.isPanelOpen), diagnostics=\(vm.showingDiagnostics)\n", stderr)
                 exit(1)
             }
             vm.closePanel()
-            await waitFor("closing animation releases the panel") { dropdownPanel == nil }
+            await waitFor("closing releases the panel") { dropdownPanel == nil }
             vm.store.ingest(RawIncomingEvent(agent: .codex, type: .sessionEnd, sessionId: id))
             vm.store.ingest(RawIncomingEvent(agent: .claudeCode, type: .sessionEnd, sessionId: id))
             await waitFor("capsule shrinks after sessions end") { capsulePanel.frame.width == 56 }
