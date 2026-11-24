@@ -1,16 +1,11 @@
-# Normalize line endings so the repo is consistent across Windows/macOS/Linux.
+# Normalize line endings across tools.
 * text=auto eol=lf
-
-# Windows-only launchers must stay CRLF.
-*.cmd text eol=crlf
-*.bat text eol=crlf
-*.ps1 text eol=crlf
 
 # Unix shell scripts must stay LF.
 *.sh text eol=lf
 
 # Binary assets — never line-ending-converted or diffed.
-*.ico binary
+*.icns binary
 *.png binary
 *.jpg binary
 *.jpeg binary

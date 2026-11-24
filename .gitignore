@@ -1,11 +1,7 @@
-# Dependencies
-node_modules/
-
-# Build output / packaged app
-dist/
-dist-electron/
+# SwiftPM / Build output / packaged app
+.build/
+.swiftpm/
 release/
-*.tsbuildinfo
 
 # Logs & temp
 *.log

@@ -1,5 +1,7 @@
 # 待办与路线图 · Light
 
+> 历史版本资料。当前分支的功能和运行方式见 [项目说明](../README.md)。
+
 本文档是 Light 尚未实现事项的**唯一待办清单**。
 
 - 已完成的功能与修复在发布时归档至 [`docs/releases/`](releases/)，并同步进 [`docs/product.md`](product.md) 基线规格，不再保留在此处。
