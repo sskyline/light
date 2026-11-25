@@ -170,18 +170,9 @@ private struct AgentPillView: View {
             : nil
 
         Button(action: onTap) {
-            ZStack(alignment: .leading) {
-                if !timeText.isEmpty {
-                    // Keep the agent name in place when the elapsed time gains a digit.
-                    let sample = timeText.contains("h") ? "00h00m" : (timeText.contains("m") ? "00m00s" : "00s")
-                    label(status: status, countBadge: countBadge, timeText: sample)
-                        .hidden()
-                        .accessibilityHidden(true)
-                }
-                label(status: status, countBadge: countBadge, timeText: timeText)
-            }
-            .frame(height: 36)
-            .contentShape(Rectangle())
+            label(status: status, countBadge: countBadge, timeText: timeText)
+                .frame(height: 36)
+                .contentShape(Rectangle())
         }
         .buttonStyle(StableLabelButtonStyle())
     }
@@ -239,9 +230,14 @@ private struct AgentPillView: View {
                     Text("·")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LightTheme.textDim)
-                    Text(timeText)
-                        .font(.system(size: 12, weight: .medium).monospacedDigit())
-                        .foregroundStyle(LightTheme.working)
+                    // Keep the timer's right edge and the agent name stationary as digits change.
+                    let sample = timeText.contains("h") ? "00h00m" : (timeText.contains("m") ? "00m00s" : "00s")
+                    ZStack(alignment: .trailing) {
+                        Text(sample).hidden().accessibilityHidden(true)
+                        Text(timeText)
+                    }
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(LightTheme.working)
                 }
             }
         case .idle:

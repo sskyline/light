@@ -696,8 +696,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             vm.store.ingest(RawIncomingEvent(agent: .codex, type: .userPrompt, sessionId: id))
             await waitFor("Codex working label fits") { capsulePanel.frame.width > 110 }
             let singleWidth = capsulePanel.frame.width
-            vm.now = Date().addingTimeInterval(12 * 60 + 34)
+            vm.now = Date().addingTimeInterval(3 * 60 + 18)
             await waitFor("longer elapsed time fits") { capsulePanel.frame.width > singleWidth }
+            try? await Task.sleep(for: .milliseconds(260))
+            guard let view = capsulePanel.contentView,
+                  let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                fatalError("Smoke capsule bitmap missing")
+            }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            var left = bitmap.pixelsWide
+            var right = -1
+            // Measure the visible text, excluding the rounded border.
+            for y in bitmap.pixelsHigh / 3 ..< 2 * bitmap.pixelsHigh / 3 {
+                for x in bitmap.pixelsHigh / 4 ..< bitmap.pixelsWide - bitmap.pixelsHigh / 4 {
+                    if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), color.redComponent > 0.65 {
+                        left = min(left, x)
+                        right = max(right, x)
+                    }
+                }
+            }
+            let rightMargin = bitmap.pixelsWide - 1 - right
+            guard right >= left, abs(left - rightMargin) <= 3 else {
+                fatalError("Uneven capsule text margins: \(left) and \(rightMargin) px")
+            }
             vm.now = Date()
             vm.store.ingest(RawIncomingEvent(agent: .claudeCode, type: .userPrompt, sessionId: id))
             await waitFor("two agent labels fit") { capsulePanel.frame.width > singleWidth + 65 }
